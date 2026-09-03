@@ -1,0 +1,92 @@
+[project]
+name = "opspilot"
+version = "0.1.0"
+description = "OpsPilot AI — Agentic Incident Investigation & RAG Evaluation Platform (backend)"
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "bellaidan7" }]
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3.6",
+    "anthropic>=0.39",
+    "structlog>=24.4",
+    "tiktoken>=0.8",
+]
+
+[project.optional-dependencies]
+# Local embedding model + future PyTorch reranker training. Heavy; not needed
+# for the fast test path (which uses the deterministic fake provider).
+ml = [
+    "torch>=2.2",
+    "sentence-transformers>=3.3",
+    "numpy>=1.26",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "httpx>=0.27",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "testcontainers[postgres]>=4.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opspilot"]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PTH", "RUF"]
+ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["opspilot"]
+mypy_path = "src"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["pgvector.*", "sentence_transformers.*", "torch.*", "testcontainers.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: fast, no external dependencies",
+    "integration: requires a running PostgreSQL (Docker)",
+    "retrieval: retrieval regression / quality checks",
+    "agent: agent orchestration behaviour",
+    "adversarial: prompt-injection and hostile-input defenses",
+    "slow: downloads models or otherwise slow; excluded from fast CI",
+]
+addopts = "-ra --strict-markers"
+
+[tool.coverage.run]
+source = ["src/opspilot"]
+branch = true

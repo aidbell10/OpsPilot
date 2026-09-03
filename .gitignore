@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# uv
+# (uv.lock IS committed)
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+.next/
+out/
+frontend/.env*
+
+# Data & models (regenerable, large)
+data/generated/
+ml/checkpoints/
+ml/runs/
+.cache/
+.hf_cache/
+*.pt
+*.bin
+*.safetensors
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
