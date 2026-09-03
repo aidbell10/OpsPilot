@@ -152,6 +152,19 @@ uv run pytest                        # full: needs `docker compose up -d db`
 uv run pytest -m slow                # downloads the embedding model
 ```
 
+### Synthetic knowledge base (Phase 2)
+
+```bash
+python -m data.generator             # -> data/generated/  (deterministic, seed 42)
+python -m data.generator --check     # fail if data/generated/ is stale
+make gen  /  make gen-check  /  make gen-test
+```
+
+Meridian Retail — 7 services, ~115 releases, ~95 documents, ~25 historical
+incidents, and 12 planted ground-truth chains with ~22 evaluation cases
+(straightforward / multi-hop / unanswerable / adversarial). `data/generated/` is
+git-ignored and rebuilt on demand. See [`data/generator/README.md`](data/generator/README.md).
+
 Quality gate: `uv run ruff check .` · `uv run ruff format --check .` · `uv run mypy src`.
 
 Point integration tests at an already-running database with
@@ -166,8 +179,8 @@ Docker is unavailable.
 | Phase | Scope | State |
 |------:|-------|-------|
 | 1  | Foundation: scaffold, config, DB + migrations, health checks, provider abstraction, tests, CI skeleton | ✅ done |
-| 2  | Deterministic synthetic knowledge base (coherent fictional company, planted ground truth) | ⏳ next |
-| 3  | Baseline RAG: ingestion, chunking, pgvector retrieval, structured cited answers, abstention | ⏳ |
+| 2  | Deterministic synthetic knowledge base (coherent fictional company, planted ground truth) | ✅ done |
+| 3  | Baseline RAG: ingestion, chunking, pgvector retrieval, structured cited answers, abstention | ⏳ next |
 | 4  | Versioned evaluation harness (retrieval / generation / reliability / performance / cost metrics) | ⏳ |
 | 5  | Hybrid retrieval (vector + FTS + RRF) with a measured vector-vs-lexical-vs-hybrid experiment | ⏳ |
 | 6  | Pretrained cross-encoder reranking, measured | ⏳ |

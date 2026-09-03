@@ -17,6 +17,9 @@ help:
 	@echo "lint         ruff check + format check + mypy"
 	@echo "fmt          ruff format"
 	@echo "up / down    full docker-compose stack"
+	@echo "gen          (re)build the synthetic knowledge base -> data/generated"
+	@echo "gen-check    fail if data/generated is stale for the default seed"
+	@echo "gen-test / gen-lint   test / lint the generator"
 
 .PHONY: db-up db-down up down
 db-up:      ; docker compose up -d db
@@ -38,3 +41,11 @@ test:       ; cd $(BACKEND) && uv run pytest -m "not integration"
 test-all:   ; cd $(BACKEND) && uv run pytest
 lint:       ; cd $(BACKEND) && uv run ruff check . && uv run ruff format --check . && uv run mypy src
 fmt:        ; cd $(BACKEND) && uv run ruff format .
+
+# --- Phase 2: synthetic knowledge-base generator (stdlib only) -------------
+GEN := uv run --project $(BACKEND) python
+.PHONY: gen gen-check gen-test gen-lint
+gen:        ; $(GEN) -m data.generator
+gen-check:  ; $(GEN) -m data.generator --check
+gen-test:   ; cd $(BACKEND) && uv run pytest ../data/generator/tests -q
+gen-lint:   ; cd $(BACKEND) && uv run ruff check ../data && uv run ruff format --check ../data && uv run mypy --config-file ../pyproject.toml ../data

@@ -75,6 +75,39 @@ jobs:
       - name: Integration tests
         run: uv run pytest -m integration -q
 
+  generator:
+    name: data generator (determinism · verify · lint · tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.17"
+          enable-cache: true
+
+      # stdlib-only: no project sync, just an ephemeral 3.12 interpreter.
+      - name: Build twice and diff (determinism)
+        run: |
+          uv run --python 3.12 python -m data.generator --out /tmp/gen-a
+          uv run --python 3.12 python -m data.generator --out /tmp/gen-b
+          diff -r /tmp/gen-a /tmp/gen-b
+
+      - name: Verify a non-default seed also builds
+        run: uv run --python 3.12 python -m data.generator --seed 7 --dry-run > /dev/null
+
+      - name: Ruff lint + format
+        run: |
+          uvx ruff@0.16.5 check data
+          uvx ruff@0.16.5 format --check data
+
+      - name: Mypy
+        run: uv run --python 3.12 --with mypy==2.3.1 mypy --config-file pyproject.toml data
+
+      - name: Tests
+        run: uv run --python 3.12 --with pytest pytest data/generator/tests -q
+
   # Phase 13 will add: security/static checks (bandit, pip-audit),
   # offline retrieval regression, Docker build + smoke tests, and a
   # separate scheduled workflow for the full paid evaluation benchmark.

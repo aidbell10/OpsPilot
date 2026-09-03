@@ -1,0 +1,27 @@
+# Repo-root tooling config.
+#
+# The backend is its own uv project under ``backend/``. This file exists so the
+# stdlib-only synthetic data generator under ``data/`` gets the same lint / type
+# / test treatment without being pulled into the backend's dependency closure.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["backend", "frontend", "data/generated"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PTH", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"data/generator/tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["data"]
+strict = true
+warn_unreachable = true
+exclude = ["data/generated", "backend", "frontend"]
+
+[tool.pytest.ini_options]
+testpaths = ["data/generator/tests"]
+addopts = "-ra --strict-markers"
