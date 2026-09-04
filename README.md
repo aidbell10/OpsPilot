@@ -168,6 +168,23 @@ point: a parse/validation failure degrades to an explicit "insufficient evidence
 instead of a 500). Set `OPSPILOT_LLM_PROVIDER=anthropic` and `OPSPILOT_ANTHROPIC_API_KEY` for
 real generation.
 
+### Evaluation harness (Phase 4)
+
+```bash
+cd backend
+uv run python -m opspilot.evaluation load-cases   # data/generated/ground_truth.json -> evaluation_cases
+uv run python -m opspilot.evaluation run           # baseline pipeline over the dev split
+uv run python -m opspilot.evaluation report        # comparison table across all runs
+# or: make eval-load / make eval-run / make eval-report
+```
+
+Retrieval metrics (Recall@K, MRR, nDCG@10, evidence coverage) are real under any embedding
+provider. Generation metrics (citation precision, hallucination rate, abstention P/R/F1) are
+only meaningful with `OPSPILOT_LLM_PROVIDER=anthropic` — under the default `fake` provider
+every case abstains by design, which is an honest reflection of the offline provider, not of
+system quality. See [`docs/evaluation.md`](docs/evaluation.md) for the full methodology and
+field-mapping decisions.
+
 ### Tests
 
 ```bash
@@ -206,7 +223,7 @@ Docker is unavailable.
 | 1  | Foundation: scaffold, config, DB + migrations, health checks, provider abstraction, tests, CI skeleton | ✅ done |
 | 2  | Deterministic synthetic knowledge base (coherent fictional company, planted ground truth) | ✅ done |
 | 3  | Baseline RAG: ingestion, chunking, pgvector retrieval, structured cited answers, abstention | ✅ done |
-| 4  | Versioned evaluation harness (retrieval / generation / reliability / performance / cost metrics) | ⏳ |
+| 4  | Versioned evaluation harness (retrieval / generation / reliability / performance / cost metrics) | ✅ done |
 | 5  | Hybrid retrieval (vector + FTS + RRF) with a measured vector-vs-lexical-vs-hybrid experiment | ⏳ |
 | 6  | Pretrained cross-encoder reranking, measured | ⏳ |
 | 7  | Fine-tuned PyTorch cross-encoder reranker (hard negatives, loss curves, A/B/C comparison) | ⏳ |

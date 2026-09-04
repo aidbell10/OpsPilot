@@ -22,6 +22,9 @@ help:
 	@echo "gen-test / gen-lint   test / lint the generator"
 	@echo "ingest       ingest data/generated -> the configured Postgres (idempotent)"
 	@echo "ingest-dry-run   load + chunk data/generated without touching the DB"
+	@echo "eval-load    load data/generated/ground_truth.json -> evaluation_cases"
+	@echo "eval-run     run the baseline pipeline over the loaded dev split"
+	@echo "eval-report  print the cross-run comparison table"
 
 .PHONY: db-up db-down up down
 db-up:      ; docker compose up -d db
@@ -56,3 +59,9 @@ gen-lint:   ; cd $(BACKEND) && uv run ruff check ../data && uv run ruff format -
 .PHONY: ingest ingest-dry-run
 ingest:          ; cd $(BACKEND) && uv run python -m opspilot.ingestion
 ingest-dry-run:  ; cd $(BACKEND) && uv run python -m opspilot.ingestion --dry-run
+
+# --- Phase 4: evaluation harness --------------------------------------------
+.PHONY: eval-load eval-run eval-report
+eval-load:   ; cd $(BACKEND) && uv run python -m opspilot.evaluation load-cases
+eval-run:    ; cd $(BACKEND) && uv run python -m opspilot.evaluation run
+eval-report: ; cd $(BACKEND) && uv run python -m opspilot.evaluation report
