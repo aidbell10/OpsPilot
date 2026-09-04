@@ -22,19 +22,23 @@ def test_health_is_live(client: TestClient) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    ("method", "path", "payload"),
-    [
-        ("post", "/incidents/analyze", {"description": "checkout 500s after v2.14.0 deploy"}),
-        ("post", "/search", {"query": "promotion validation error"}),
-        ("post", "/feedback", {"comment": "great"}),
-    ],
-)
-def test_phase3_endpoints_declared_but_not_implemented(
-    client: TestClient, method: str, path: str, payload: dict[str, object]
-) -> None:
-    resp = getattr(client, method)(path, json=payload)
-    assert resp.status_code == 501
+def test_feedback_does_not_require_a_database_for_bad_input(client: TestClient) -> None:
+    # comment alone with no incident/case id is a validation-shaped request;
+    # a too-long comment must 422 before ever touching get_db.
+    resp = client.post("/feedback", json={"comment": "x" * 5000})
+    assert resp.status_code == 422
+
+
+@pytest.mark.unit
+def test_analyze_rejects_too_short_description(client: TestClient) -> None:
+    resp = client.post("/incidents/analyze", json={"description": "short"})
+    assert resp.status_code == 422
+
+
+@pytest.mark.unit
+def test_search_rejects_bad_document_type(client: TestClient) -> None:
+    resp = client.post("/search", json={"query": "checkout 500s", "document_type": "not-a-type"})
+    assert resp.status_code == 422
 
 
 @pytest.mark.unit

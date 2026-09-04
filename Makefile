@@ -20,6 +20,8 @@ help:
 	@echo "gen          (re)build the synthetic knowledge base -> data/generated"
 	@echo "gen-check    fail if data/generated is stale for the default seed"
 	@echo "gen-test / gen-lint   test / lint the generator"
+	@echo "ingest       ingest data/generated -> the configured Postgres (idempotent)"
+	@echo "ingest-dry-run   load + chunk data/generated without touching the DB"
 
 .PHONY: db-up db-down up down
 db-up:      ; docker compose up -d db
@@ -49,3 +51,8 @@ gen:        ; $(GEN) -m data.generator
 gen-check:  ; $(GEN) -m data.generator --check
 gen-test:   ; cd $(BACKEND) && uv run pytest ../data/generator/tests -q
 gen-lint:   ; cd $(BACKEND) && uv run ruff check ../data && uv run ruff format --check ../data && uv run mypy --config-file ../pyproject.toml ../data
+
+# --- Phase 3: ingest the synthetic corpus into Postgres --------------------
+.PHONY: ingest ingest-dry-run
+ingest:          ; cd $(BACKEND) && uv run python -m opspilot.ingestion
+ingest-dry-run:  ; cd $(BACKEND) && uv run python -m opspilot.ingestion --dry-run

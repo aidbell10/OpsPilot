@@ -143,6 +143,31 @@ uv run uvicorn opspilot.main:app --reload
 docker compose up
 ```
 
+### Ingest the synthetic knowledge base (Phase 3)
+
+```bash
+python -m data.generator             # -> data/generated/  (see below)
+cd backend
+uv run python -m opspilot.ingestion  # chunk, embed, and upsert into Postgres — idempotent
+# or: make ingest / make ingest-dry-run (loads + chunks without touching the DB)
+```
+
+Then try it:
+
+```bash
+curl -X POST localhost:8000/search -H 'content-type: application/json' \
+  -d '{"query": "auth rejecting valid tokens after key rotation", "top_k": 3}'
+
+curl -X POST localhost:8000/incidents/analyze -H 'content-type: application/json' \
+  -d '{"description": "auth is rejecting valid tokens with invalid signature errors", "service": "auth"}'
+```
+
+With the default `fake` LLM provider, `/incidents/analyze` retrieves real evidence but always
+abstains on generation (the fake provider doesn't emit valid structured JSON — that's the
+point: a parse/validation failure degrades to an explicit "insufficient evidence" response
+instead of a 500). Set `OPSPILOT_LLM_PROVIDER=anthropic` and `OPSPILOT_ANTHROPIC_API_KEY` for
+real generation.
+
 ### Tests
 
 ```bash
@@ -180,7 +205,7 @@ Docker is unavailable.
 |------:|-------|-------|
 | 1  | Foundation: scaffold, config, DB + migrations, health checks, provider abstraction, tests, CI skeleton | ✅ done |
 | 2  | Deterministic synthetic knowledge base (coherent fictional company, planted ground truth) | ✅ done |
-| 3  | Baseline RAG: ingestion, chunking, pgvector retrieval, structured cited answers, abstention | ⏳ next |
+| 3  | Baseline RAG: ingestion, chunking, pgvector retrieval, structured cited answers, abstention | ✅ done |
 | 4  | Versioned evaluation harness (retrieval / generation / reliability / performance / cost metrics) | ⏳ |
 | 5  | Hybrid retrieval (vector + FTS + RRF) with a measured vector-vs-lexical-vs-hybrid experiment | ⏳ |
 | 6  | Pretrained cross-encoder reranking, measured | ⏳ |

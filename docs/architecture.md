@@ -24,6 +24,18 @@ POST /incidents/analyze
     → answer  OR  abstention  ("insufficient evidence")
 ```
 
+**Phase 3 status:** this is the vector-only slice of that pipeline —
+`opspilot.retrieval.semantic` (pgvector cosine top-K, no lexical/RRF/rerank yet),
+`opspilot.generation.prompt` (evidence-grounded prompt, JSON-schema instructions),
+`opspilot.generation.parser` (JSON parse + Pydantic validation + citation
+verification, degrading to abstention on any failure — including the offline
+`fake` LLM provider, which never emits valid JSON on purpose). Ingestion
+(`opspilot.ingestion`) loads `data/generated/`, chunks with `tiktoken`
+(`chunk_size`/`chunk_overlap` in tokens), embeds via the configured
+`EmbeddingProvider`, and idempotently upserts `services` / `documents` /
+`document_chunks` / `deployments` / `historical_incidents`
+(`uv run python -m opspilot.ingestion`, or `make ingest`).
+
 ## Components
 
 | Package | Responsibility | Phase |
