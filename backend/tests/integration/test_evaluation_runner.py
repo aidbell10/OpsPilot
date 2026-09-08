@@ -13,7 +13,7 @@ from opspilot.evaluation.runner import run_evaluation
 from opspilot.ingestion.pipeline import ingest_corpus
 from opspilot.models.enums import EvalSplit, RetrievalStrategy
 from opspilot.models.evaluation import EvaluationResult
-from opspilot.providers.fake import FakeEmbeddingProvider, FakeLLMProvider
+from opspilot.providers.fake import FakeEmbeddingProvider, FakeLLMProvider, FakeRerankProvider
 
 pytestmark = pytest.mark.integration
 
@@ -148,3 +148,35 @@ def test_hybrid_and_lexical_strategies_are_recorded(db_session: Session, clean_d
     report = build_report(db_session)
     assert "hybrid_rrf" in report
     assert "lexical" in report
+
+
+def test_reranker_is_recorded_and_timed(db_session: Session, clean_db: None) -> None:
+    _seed(db_session)
+    settings = get_settings()
+
+    run = run_evaluation(
+        db_session,
+        dataset_version=_DATASET_VERSION,
+        split=EvalSplit.DEV,
+        strategy=RetrievalStrategy.HYBRID_RRF,
+        embedding_provider=FakeEmbeddingProvider(dim=384),
+        llm_provider=FakeLLMProvider(),
+        rerank_provider=FakeRerankProvider(),
+        settings=settings,
+    )
+    db_session.commit()
+
+    assert run.reranker == "fake-rerank-v1"
+    assert run.aggregate_metrics["reranker"] == "fake-rerank-v1"
+
+    results = (
+        db_session.execute(select(EvaluationResult).where(EvaluationResult.run_id == run.id))
+        .scalars()
+        .all()
+    )
+    assert results
+    for result in results:
+        assert "rerank_ms" in result.latency_ms
+        assert result.latency_ms["rerank_ms"] >= 0.0
+
+    assert "fake-rerank-v1" in build_report(db_session)

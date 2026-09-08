@@ -17,6 +17,7 @@ def test_defaults_are_offline_safe() -> None:
     assert s.chunk_overlap < s.chunk_size
     assert s.retrieval_strategy == "hybrid"
     assert s.rrf_k == 60
+    assert s.reranker == "none"  # reranking is opt-in
 
 
 @pytest.mark.unit

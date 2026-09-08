@@ -10,4 +10,5 @@ from opspilot.schemas.analysis import EvidenceItem
 class SearchResponse(BaseModel):
     query: str
     strategy: str
+    reranker: str | None = None
     results: list[EvidenceItem]

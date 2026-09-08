@@ -20,6 +20,19 @@ class EmbeddingResult:
 
 
 @dataclass(frozen=True, slots=True)
+class RerankResult:
+    """Relevance scores for a candidate list, aligned to the input order.
+
+    Scores are in ``[0, 1]`` (higher = more relevant) — a real cross-encoder's
+    raw logits are sigmoid-squashed by the provider so callers can treat the
+    value as a relevance probability and compare it across queries.
+    """
+
+    scores: list[float]
+    model: str
+
+
+@dataclass(frozen=True, slots=True)
 class LLMResult:
     """Raw text response plus token usage."""
 
@@ -41,6 +54,24 @@ class EmbeddingProvider(Protocol):
 
     def embed(self, texts: list[str]) -> EmbeddingResult:
         """Embed a batch of texts. Order of ``vectors`` matches ``texts``."""
+        ...
+
+
+@runtime_checkable
+class RerankProvider(Protocol):
+    """Scores (query, document) pairs for relevance — a reranking cross-encoder.
+
+    Unlike :class:`EmbeddingProvider`, which encodes query and document
+    independently, a reranker sees both together and is therefore more accurate
+    but too slow to run over a whole corpus — it runs only over a retrieved
+    candidate set.
+    """
+
+    name: str
+    model: str
+
+    def rerank(self, query: str, documents: list[str]) -> RerankResult:
+        """Score every document against ``query``. ``scores`` matches ``documents`` order."""
         ...
 
 

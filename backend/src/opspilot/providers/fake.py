@@ -15,7 +15,7 @@ import hashlib
 import math
 import re
 
-from opspilot.providers.base import EmbeddingResult, LLMResult
+from opspilot.providers.base import EmbeddingResult, LLMResult, RerankResult
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -59,6 +59,32 @@ class FakeEmbeddingProvider:
                     acc[i] += v
             vectors.append(_normalise(acc))
         return EmbeddingResult(vectors=vectors, model=self.model, total_tokens=total_tokens)
+
+
+class FakeRerankProvider:
+    """Deterministic offline reranker: relevance = query/document token overlap.
+
+    Not a real cross-encoder, but it *does* reorder a candidate list by lexical
+    overlap with the query — enough to test that the rerank stage is wired in
+    and changes ordering. Returns a value in ``[0, 1]``.
+    """
+
+    name = "fake"
+
+    def __init__(self, model: str = "fake-rerank-v1") -> None:
+        self.model = model
+
+    def rerank(self, query: str, documents: list[str]) -> RerankResult:
+        query_tokens = set(_TOKEN_RE.findall(query.lower()))
+        scores: list[float] = []
+        for doc in documents:
+            doc_tokens = set(_TOKEN_RE.findall(doc.lower()))
+            if not query_tokens or not doc_tokens:
+                scores.append(0.0)
+                continue
+            overlap = len(query_tokens & doc_tokens)
+            scores.append(overlap / len(query_tokens | doc_tokens))
+        return RerankResult(scores=scores, model=self.model)
 
 
 class FakeLLMProvider:

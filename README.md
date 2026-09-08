@@ -177,9 +177,11 @@ cd backend
 uv run python -m opspilot.evaluation load-cases          # ground_truth.json -> evaluation_cases
 uv run python -m opspilot.evaluation run                 # pipeline over the dev split
 uv run python -m opspilot.evaluation run --strategy lexical   # vector | lexical | hybrid
+uv run python -m opspilot.evaluation run --reranker cross_encoder   # + cross-encoder rerank (Phase 6)
 uv run python -m opspilot.evaluation report              # comparison table across all runs
 # or: make eval-load / make eval-run / make eval-report
-# make eval-experiment  -> one run each of vector, lexical, hybrid, then the report
+# make eval-experiment         -> vector, lexical, hybrid, then the report
+# make eval-experiment-rerank  -> hybrid with vs without the cross-encoder, then the report
 ```
 
 Retrieval metrics (Recall@K, MRR, nDCG@10, evidence coverage) are real under any embedding
@@ -229,7 +231,7 @@ Docker is unavailable.
 | 3  | Baseline RAG: ingestion, chunking, pgvector retrieval, structured cited answers, abstention | ✅ done |
 | 4  | Versioned evaluation harness (retrieval / generation / reliability / performance / cost metrics) | ✅ done |
 | 5  | Hybrid retrieval (vector + FTS + RRF), metadata filters, strategy-per-eval-run; measured vector-vs-lexical-vs-hybrid experiment | ✅ done ([Experiment 1](docs/experiments.md)) |
-| 6  | Pretrained cross-encoder reranking, measured | ⏳ |
+| 6  | Pretrained cross-encoder reranking (`RerankProvider`, `--reranker`), measured | ✅ done ([Experiment 2](docs/experiments.md)) |
 | 7  | Fine-tuned PyTorch cross-encoder reranker (hard negatives, loss curves, A/B/C comparison) | ⏳ |
 | 8  | LangGraph agent with read-only tools and hard budgets | ⏳ |
 | 9  | "Does the agent help?" experiment + complexity router | ⏳ |

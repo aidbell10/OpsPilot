@@ -105,10 +105,18 @@ uv run python -m opspilot.evaluation run --strategy vector   # vector | lexical 
 
 **`--strategy`** (Phase 5) selects the retrieval arm for the run and is recorded on the
 `EvaluationRun` row (`retrieval_strategy`), so `vector` / `lexical` / `hybrid` runs sit
-side by side in the report. It defaults to `OPSPILOT_RETRIEVAL_STRATEGY` (`hybrid`). All
-three call the same `opspilot.retrieval.strategy.retrieve_chunks` dispatch the API uses;
-only the retrieval arm changes, everything downstream (prompt, generation, metrics) is
-identical.
+side by side in the report. It defaults to `OPSPILOT_RETRIEVAL_STRATEGY` (`hybrid`).
+
+**`--reranker`** (Phase 6) adds a cross-encoder rerank stage: `none` (default —
+`OPSPILOT_RERANKER`), `fake` (deterministic offline), or `cross_encoder` (a local
+sentence-transformers `CrossEncoder`, `OPSPILOT_RERANKER_MODEL`). With a reranker,
+`max(retrieval_top_k, rerank_candidate_k)` candidates are retrieved and trimmed back to
+`retrieval_top_k` by the reranker; the model name is recorded on `EvaluationRun.reranker`
+and rerank wall-clock lands in `latency_ms.rerank_ms` / `aggregate_metrics.mean_rerank_ms`.
+
+Every combination calls the same retrieval + rerank code the API uses (the runner just
+invokes the two steps separately to time them); only the retrieval/rerank stage changes,
+everything downstream (prompt, generation, metrics) is identical.
 
 For each loaded case: embeds the query once, runs `opspilot.retrieval.semantic.search_chunks`
 / `search_historical_incidents` (the exact functions `POST /search` and

@@ -73,3 +73,4 @@ class AnalyzeResponse(BaseModel):
     related_incidents: list[RelatedIncident]
     retrieval_top_k: int
     retrieval_strategy: str
+    reranker: str | None = None

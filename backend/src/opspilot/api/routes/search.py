@@ -1,15 +1,15 @@
-"""Evidence search (Phase 5: vector / lexical / hybrid-RRF, metadata-filtered)."""
+"""Evidence search (Phase 5/6: vector / lexical / hybrid-RRF + optional rerank)."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from opspilot.config import RetrievalStrategyName, get_settings
 from opspilot.db.session import get_db
 from opspilot.models.enums import DocumentType, RetrievalStrategy
-from opspilot.providers.factory import get_embedding_provider
+from opspilot.providers.factory import get_embedding_provider, get_rerank_provider
 from opspilot.retrieval.filters import ChunkFilters
 from opspilot.retrieval.strategy import retrieve_chunks
 from opspilot.schemas.analysis import EvidenceItem
@@ -27,6 +27,11 @@ class SearchRequest(BaseModel):
     strategy: RetrievalStrategyName | None = Field(
         default=None, description="Override OPSPILOT_RETRIEVAL_STRATEGY for this request."
     )
+    rerank: bool | None = Field(
+        default=None,
+        description="Force the cross-encoder reranker on/off for this request "
+        "(default: whether OPSPILOT_RERANKER is configured).",
+    )
 
 
 @router.post("", response_model=SearchResponse)
@@ -34,6 +39,11 @@ def search(request: SearchRequest, db: Session = Depends(get_db)) -> SearchRespo
     settings = get_settings()
     embedding_provider = get_embedding_provider()
     strategy = RetrievalStrategy.from_name(request.strategy or settings.retrieval_strategy)
+    reranker = None if request.rerank is False else get_rerank_provider()
+    if request.rerank is True and reranker is None:
+        raise HTTPException(
+            status_code=422, detail="rerank=true requested but OPSPILOT_RERANKER=none"
+        )
 
     query_vector = embedding_provider.embed([request.query]).vectors[0]
     matches = retrieve_chunks(
@@ -49,10 +59,13 @@ def search(request: SearchRequest, db: Session = Depends(get_db)) -> SearchRespo
         ),
         candidate_k=settings.retrieval_candidate_k,
         rrf_k=settings.rrf_k,
+        reranker=reranker,
+        rerank_candidate_k=settings.rerank_candidate_k,
     )
     return SearchResponse(
         query=request.query,
         strategy=strategy.value,
+        reranker=reranker.model if reranker is not None else None,
         results=[
             EvidenceItem(
                 chunk_id=str(m.chunk_id),

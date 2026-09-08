@@ -17,17 +17,18 @@
 POST /incidents/analyze
   → orchestrator
     → hybrid retrieval        (semantic pgvector + lexical FTS → RRF)
-    → cross-encoder rerank    (≈20 candidates → ≈6 evidence chunks)
+    → cross-encoder rerank    (optional: ≈20 candidates → top_k evidence chunks)
     → context builder         (each chunk tagged with its real id)
     → LLM generation          (Pydantic-validated structured output)
     → citation verifier       (every claim resolves to a retrieved chunk)
     → answer  OR  abstention  ("insufficient evidence")
 ```
 
-**Phase 5 status:** retrieval is now `vector` / `lexical` / `hybrid` (RRF), selected by
-`OPSPILOT_RETRIEVAL_STRATEGY` (default `hybrid`) and dispatched in one place —
-`opspilot.retrieval.strategy.retrieve_chunks`, called by both the API routes and the
-evaluation runner so they cannot drift:
+**Phase 5/6 status:** retrieval is `vector` / `lexical` / `hybrid` (RRF), selected by
+`OPSPILOT_RETRIEVAL_STRATEGY` (default `hybrid`), optionally followed by a cross-encoder
+rerank when `OPSPILOT_RERANKER` is set (default `none`). Both are dispatched in one place —
+`opspilot.retrieval.strategy.retrieve_chunks`, called by the API routes and (as its two
+component steps, for per-stage timing) the evaluation runner, so they cannot drift:
 
 * `opspilot.retrieval.semantic` — pgvector cosine top-K (HNSW index).
 * `opspilot.retrieval.lexical` — PostgreSQL FTS over the generated `content_tsv` (GIN index);
@@ -39,8 +40,14 @@ evaluation runner so they cannot drift:
   top-K.
 * `opspilot.retrieval.filters` — `ChunkFilters` (service / doc type / version / environment /
   timestamp window); the same object is applied identically to both arms.
+* `opspilot.retrieval.rerank` — re-scores the retrieved candidate list with a
+  `RerankProvider` (`fake`, or a local sentence-transformers `CrossEncoder` —
+  `cross-encoder/ms-marco-MiniLM-L-6-v2` by default) and keeps the best `retrieval_top_k`.
+  The cross-encoder sees (query, chunk) jointly, so it is more accurate than the bi-encoder
+  but only affordable over a ~20-candidate set. Fine-tuning this model on the planted ground
+  truth is Phase 7.
 
-The reranking stage (Phase 6/7) is still not present. Generation is unchanged:
+Generation is unchanged:
 `opspilot.generation.prompt` (evidence-grounded prompt, JSON-schema instructions),
 `opspilot.generation.parser` (JSON parse + Pydantic validation + citation
 verification, degrading to abstention on any failure — including the offline
@@ -58,7 +65,7 @@ verification, degrading to abstention on any failure — including the offline
 | `config` | env-driven `Settings`, validated on load | 1 |
 | `db` | engine/session lifecycle, declarative base, column types | 1 |
 | `models` | SQLAlchemy ORM (one module per aggregate) | 1 |
-| `providers` | `EmbeddingProvider` / `LLMProvider` protocols + `fake` / `local` / `anthropic` impls | 1 |
+| `providers` | `EmbeddingProvider` / `LLMProvider` / `RerankProvider` protocols + `fake` / `local` / `anthropic` impls | 1 / 6 |
 | `telemetry` | token + cost accounting; OpenTelemetry wiring | 1 / 11 |
 | `ingestion` | load synthetic docs, chunk (token-bounded, overlap), persist | 3 |
 | `retrieval` | `semantic`, `lexical`, `fusion` (RRF), `rerank`, `filters` | 3 / 5 / 6 / 7 |

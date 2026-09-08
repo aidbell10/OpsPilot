@@ -1,4 +1,4 @@
-"""Incident investigation endpoints (Phase 5: strategy-configurable hybrid RAG)."""
+"""Incident investigation endpoints (Phase 5/6: hybrid retrieval + optional rerank)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,11 @@ from opspilot.generation.prompt import SYSTEM_PROMPT, build_user_prompt
 from opspilot.models.enums import Environment, RetrievalStrategy
 from opspilot.models.incident import Incident
 from opspilot.models.service import Service
-from opspilot.providers.factory import get_embedding_provider, get_llm_provider
+from opspilot.providers.factory import (
+    get_embedding_provider,
+    get_llm_provider,
+    get_rerank_provider,
+)
 from opspilot.retrieval.filters import ChunkFilters
 from opspilot.retrieval.semantic import search_historical_incidents
 from opspilot.retrieval.strategy import retrieve_chunks
@@ -37,6 +41,7 @@ def analyze_incident(request: AnalyzeRequest, db: Session = Depends(get_db)) -> 
     settings = get_settings()
     embedding_provider = get_embedding_provider()
     llm_provider = get_llm_provider()
+    rerank_provider = get_rerank_provider()
     strategy = RetrievalStrategy.from_name(settings.retrieval_strategy)
 
     query_vector = embedding_provider.embed([request.description]).vectors[0]
@@ -49,6 +54,8 @@ def analyze_incident(request: AnalyzeRequest, db: Session = Depends(get_db)) -> 
         filters=ChunkFilters(service_name=request.service),
         candidate_k=settings.retrieval_candidate_k,
         rrf_k=settings.rrf_k,
+        reranker=rerank_provider,
+        rerank_candidate_k=settings.rerank_candidate_k,
     )
     historical_matches = search_historical_incidents(
         db,
@@ -133,4 +140,5 @@ def analyze_incident(request: AnalyzeRequest, db: Session = Depends(get_db)) -> 
         related_incidents=related_incidents,
         retrieval_top_k=settings.retrieval_top_k,
         retrieval_strategy=strategy.value,
+        reranker=rerank_provider.model if rerank_provider is not None else None,
     )

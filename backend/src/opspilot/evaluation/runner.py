@@ -1,22 +1,24 @@
 """Run the RAG pipeline over a set of evaluation cases, for a given strategy.
 
 Reuses the exact retrieval and generation-parsing functions the API uses
-(:func:`opspilot.retrieval.strategy.retrieve_chunks` — the same dispatch
-``POST /search`` and ``POST /incidents/analyze`` call —
+(:func:`opspilot.retrieval.strategy.retrieve_candidates` +
+:func:`opspilot.retrieval.rerank.rerank_chunks` — together these are what
+:func:`opspilot.retrieval.strategy.retrieve_chunks` runs for
+``POST /search`` and ``POST /incidents/analyze`` —
 :func:`opspilot.retrieval.semantic.search_historical_incidents`,
 :func:`opspilot.generation.prompt.build_user_prompt`,
-:func:`opspilot.generation.parser.parse_llm_output`) — the retrieval and
-generation *logic* is never reimplemented here.
+:func:`opspilot.generation.parser.parse_llm_output`) — the retrieval,
+rerank, and generation *logic* is never reimplemented here.
 
-One deliberate deviation from the endpoints: they call
-``opspilot.generation.parser.run_generation`` and the ``embed_and_search_*``
-convenience wrappers, which embed the query internally and don't surface the
-embedding/LLM token counts cost accounting needs. So this module embeds the
-query once (reusing the vector for both the chunk and historical-incident
-searches) and calls the LLM provider directly, then hands its raw text to the
-same ``parse_llm_output`` the endpoint uses. The retrieval query and the
-parse/validate/citation-verify logic are 100% shared; only the thin
-orchestration wrappers that don't expose telemetry are bypassed.
+Two deliberate deviations from the endpoints, both to capture telemetry the
+endpoint wrappers hide: (1) the query is embedded once here (reused for the
+chunk and historical-incident searches) and the LLM provider is called
+directly, rather than via ``run_generation`` / the ``embed_and_search_*``
+wrappers, so the embedding/LLM token counts reach cost accounting; (2)
+retrieval and rerank are called as separate timed steps rather than as the
+single ``retrieve_chunks`` call, so ``retrieval_ms`` and ``rerank_ms`` land in
+``latency_ms`` independently. The queries and the parse/validate/citation-verify
+logic are 100% shared.
 """
 
 from __future__ import annotations
@@ -38,10 +40,11 @@ from opspilot.generation.parser import parse_llm_output
 from opspilot.generation.prompt import SYSTEM_PROMPT, build_user_prompt
 from opspilot.models.enums import EvalSplit, RetrievalStrategy
 from opspilot.models.evaluation import EvaluationCase, EvaluationResult, EvaluationRun
-from opspilot.providers.base import EmbeddingProvider, LLMProvider
+from opspilot.providers.base import EmbeddingProvider, LLMProvider, RerankProvider
 from opspilot.retrieval.filters import ChunkFilters
+from opspilot.retrieval.rerank import rerank_chunks
 from opspilot.retrieval.semantic import search_historical_incidents
-from opspilot.retrieval.strategy import retrieve_chunks
+from opspilot.retrieval.strategy import retrieve_candidates
 from opspilot.schemas.analysis import RelatedIncident
 from opspilot.telemetry.cost import CostAccumulator
 
@@ -94,6 +97,7 @@ def _evaluate_case(
     strategy: RetrievalStrategy,
     embedding_provider: EmbeddingProvider,
     llm_provider: LLMProvider,
+    rerank_provider: RerankProvider | None,
     settings: Settings,
 ) -> CaseEvaluation:
     """Run retrieval + generation for one case; return the JSONB payloads to persist."""
@@ -102,13 +106,18 @@ def _evaluate_case(
     embed_result = embedding_provider.embed([case.query])
     query_vector = embed_result.vectors[0]
 
+    fetch_k = (
+        max(settings.retrieval_top_k, settings.rerank_candidate_k)
+        if rerank_provider is not None
+        else settings.retrieval_top_k
+    )
     t_retrieval_start = time.perf_counter()
-    chunk_matches = retrieve_chunks(
+    candidates = retrieve_candidates(
         session,
         strategy=strategy,
         query_embedding=query_vector,
         query_text=case.query,
-        top_k=settings.retrieval_top_k,
+        top_k=fetch_k,
         filters=ChunkFilters(service_name=case.service_name),
         candidate_k=settings.retrieval_candidate_k,
         rrf_k=settings.rrf_k,
@@ -120,6 +129,16 @@ def _evaluate_case(
         service_name=case.service_name,
     )
     retrieval_ms = (time.perf_counter() - t_retrieval_start) * 1000
+
+    if rerank_provider is not None:
+        t_rerank_start = time.perf_counter()
+        chunk_matches = rerank_chunks(
+            rerank_provider, case.query, candidates, top_k=settings.retrieval_top_k
+        )
+        rerank_ms = (time.perf_counter() - t_rerank_start) * 1000
+    else:
+        chunk_matches = candidates
+        rerank_ms = 0.0
 
     related_incidents = [
         RelatedIncident(
@@ -179,6 +198,7 @@ def _evaluate_case(
 
     latency_ms: dict[str, float] = {
         "retrieval_ms": retrieval_ms,
+        "rerank_ms": rerank_ms,
         "generation_ms": generation_ms,
         "total_ms": total_ms,
     }
@@ -218,6 +238,7 @@ def run_evaluation(
     strategy: RetrievalStrategy,
     embedding_provider: EmbeddingProvider,
     llm_provider: LLMProvider,
+    rerank_provider: RerankProvider | None = None,
     settings: Settings,
     notes: str = "",
 ) -> EvaluationRun:
@@ -250,7 +271,7 @@ def run_evaluation(
         chunk_overlap=settings.chunk_overlap,
         top_k=settings.retrieval_top_k,
         retrieval_strategy=strategy,
-        reranker=None,
+        reranker=rerank_provider.model if rerank_provider is not None else None,
         prompt_version=settings.prompt_version,
         notes=notes,
         aggregate_metrics={},
@@ -266,6 +287,8 @@ def run_evaluation(
     hallucination_flags: list[bool] = []
     passed_flags: list[bool] = []
     total_latencies: list[float] = []
+    retrieval_latencies: list[float] = []
+    rerank_latencies: list[float] = []
     costs_usd: list[float] = []
     abstention_tallies: list[m.AbstentionCounts] = []
 
@@ -276,6 +299,7 @@ def run_evaluation(
             strategy=strategy,
             embedding_provider=embedding_provider,
             llm_provider=llm_provider,
+            rerank_provider=rerank_provider,
             settings=settings,
         )
 
@@ -305,6 +329,8 @@ def run_evaluation(
         hallucination_flags.append(bool(generation_metrics["hallucinated_forbidden_claim"]))
         passed_flags.append(evaluated.passed)
         total_latencies.append(evaluated.latency_ms["total_ms"])
+        retrieval_latencies.append(evaluated.latency_ms["retrieval_ms"])
+        rerank_latencies.append(evaluated.latency_ms["rerank_ms"])
         estimated_usd = evaluated.cost["estimated_usd"]
         assert isinstance(estimated_usd, float)
         costs_usd.append(estimated_usd)
@@ -331,9 +357,12 @@ def run_evaluation(
         "pass_rate": _mean([1.0 if p else 0.0 for p in passed_flags]),
         "latency_ms_p50": _percentile(total_latencies, 50),
         "latency_ms_p95": _percentile(total_latencies, 95),
+        "mean_retrieval_ms": _mean(retrieval_latencies),
+        "mean_rerank_ms": _mean(rerank_latencies),
         "total_cost_usd": sum(costs_usd),
         "mean_cost_usd_per_query": _mean(costs_usd),
         "retrieval_strategy": strategy.value,
+        "reranker": rerank_provider.model if rerank_provider is not None else None,
         "embedding_provider": embedding_provider.name,
         "llm_provider": llm_provider.name,
     }

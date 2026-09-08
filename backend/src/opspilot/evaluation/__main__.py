@@ -2,7 +2,7 @@
 
 uv run python -m opspilot.evaluation load-cases [--data-dir path] [--dataset-version v] [--dry-run]
 uv run python -m opspilot.evaluation run [--dataset-version v] [--split dev|test]
-    [--strategy vector|lexical|hybrid] [--notes "..."]
+    [--strategy vector|lexical|hybrid] [--reranker none|fake|cross_encoder] [--notes "..."]
 uv run python -m opspilot.evaluation report
 """
 
@@ -21,7 +21,11 @@ from opspilot.evaluation.loader import (
 from opspilot.evaluation.report import build_report
 from opspilot.evaluation.runner import run_evaluation
 from opspilot.models.enums import EvalSplit, RetrievalStrategy
-from opspilot.providers.factory import get_embedding_provider, get_llm_provider
+from opspilot.providers.factory import (
+    build_rerank_provider,
+    get_embedding_provider,
+    get_llm_provider,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_DATA_DIR = REPO_ROOT / "data" / "generated"
@@ -53,6 +57,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     dataset_version = args.dataset_version or dataset_version_from_manifest(DEFAULT_DATA_DIR)
     split = EvalSplit(args.split)
     strategy = RetrievalStrategy.from_name(args.strategy or settings.retrieval_strategy)
+    rerank_provider = build_rerank_provider(args.reranker or settings.reranker, settings)
 
     with session_scope() as session:
         run = run_evaluation(
@@ -62,13 +67,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
             strategy=strategy,
             embedding_provider=get_embedding_provider(),
             llm_provider=get_llm_provider(),
+            rerank_provider=rerank_provider,
             settings=settings,
             notes=args.notes,
         )
         print(
             f"run {run.id} [dataset_version={dataset_version} split={split.value} "
-            f"strategy={run.retrieval_strategy.value} git_sha={run.git_sha} "
-            f"llm={run.llm_model} embedding={run.embedding_model}]"
+            f"strategy={run.retrieval_strategy.value} reranker={run.reranker or 'none'} "
+            f"git_sha={run.git_sha} llm={run.llm_model} embedding={run.embedding_model}]"
         )
         for key, value in run.aggregate_metrics.items():
             print(f"  {key}: {value}")
@@ -100,6 +106,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=None,
         choices=["vector", "lexical", "hybrid"],
         help="retrieval strategy for this run (default: OPSPILOT_RETRIEVAL_STRATEGY)",
+    )
+    p_run.add_argument(
+        "--reranker",
+        type=str,
+        default=None,
+        choices=["none", "fake", "cross_encoder"],
+        help="cross-encoder reranker for this run (default: OPSPILOT_RERANKER)",
     )
     p_run.add_argument("--notes", type=str, default="")
     p_run.set_defaults(func=_cmd_run)

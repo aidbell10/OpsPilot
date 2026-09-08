@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from corpus_fixtures import tiny_corpus
@@ -56,7 +56,41 @@ def test_search_strategy_override_is_echoed(
     assert resp.status_code == 200
     body = resp.json()
     assert body["strategy"] == "lexical"
+    assert body["reranker"] is None
     assert len(body["results"]) >= 1
+
+
+def test_search_with_reranker_enabled(
+    client: TestClient,
+    db_session: Session,
+    clean_db: None,
+    set_env: Callable[..., None],
+) -> None:
+    from opspilot.providers.factory import get_rerank_provider
+
+    ingest_corpus(
+        db_session,
+        tiny_corpus(),
+        embedding_provider=FakeEmbeddingProvider(dim=384),
+        chunk_size=48,
+        chunk_overlap=8,
+    )
+    db_session.commit()
+
+    set_env(reranker="fake")
+    get_rerank_provider.cache_clear()
+
+    resp = client.post("/search", json={"query": "checkout HTTP 500 promotion", "top_k": 3})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reranker"] == "fake-rerank-v1"
+    assert 1 <= len(body["results"]) <= 3
+
+    # rerank=false forces it off even when configured
+    resp_off = client.post(
+        "/search", json={"query": "checkout HTTP 500 promotion", "rerank": False}
+    )
+    assert resp_off.json()["reranker"] is None
 
 
 def test_search_returns_ingested_evidence(
@@ -109,6 +143,7 @@ def test_analyze_with_fake_llm_returns_abstained_result(client: TestClient, clea
     assert body["analysis"]["abstain_reason"]
     assert body["incident_id"]
     assert body["retrieval_strategy"] == "hybrid_rrf"
+    assert body["reranker"] is None  # OPSPILOT_RERANKER=none by default
 
 
 def test_analyze_persists_an_incident_row(

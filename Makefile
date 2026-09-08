@@ -25,6 +25,7 @@ help:
 	@echo "eval-load    load data/generated/ground_truth.json -> evaluation_cases"
 	@echo "eval-run     run the pipeline over the dev split (OPSPILOT_RETRIEVAL_STRATEGY)"
 	@echo "eval-experiment   run vector + lexical + hybrid back to back, then report"
+	@echo "eval-experiment-rerank   hybrid with vs without the cross-encoder, then report"
 	@echo "eval-report  print the cross-run comparison table"
 
 .PHONY: db-up db-down up down
@@ -62,7 +63,7 @@ ingest:          ; cd $(BACKEND) && uv run python -m opspilot.ingestion
 ingest-dry-run:  ; cd $(BACKEND) && uv run python -m opspilot.ingestion --dry-run
 
 # --- Phase 4: evaluation harness --------------------------------------------
-.PHONY: eval-load eval-run eval-experiment eval-report
+.PHONY: eval-load eval-run eval-experiment eval-experiment-rerank eval-report
 eval-load:   ; cd $(BACKEND) && uv run python -m opspilot.evaluation load-cases
 eval-run:    ; cd $(BACKEND) && uv run python -m opspilot.evaluation run
 eval-report: ; cd $(BACKEND) && uv run python -m opspilot.evaluation report
@@ -72,4 +73,10 @@ eval-experiment:
 	cd $(BACKEND) && uv run python -m opspilot.evaluation run --strategy vector  --notes "exp1 vector" \
 	 && uv run python -m opspilot.evaluation run --strategy lexical --notes "exp1 lexical" \
 	 && uv run python -m opspilot.evaluation run --strategy hybrid  --notes "exp1 hybrid" \
+	 && uv run python -m opspilot.evaluation report
+
+# Phase 6: hybrid with vs without the cross-encoder reranker.
+eval-experiment-rerank:
+	cd $(BACKEND) && uv run python -m opspilot.evaluation run --strategy hybrid --reranker none          --notes "exp2 hybrid" \
+	 && uv run python -m opspilot.evaluation run --strategy hybrid --reranker cross_encoder --notes "exp2 hybrid+rerank" \
 	 && uv run python -m opspilot.evaluation report

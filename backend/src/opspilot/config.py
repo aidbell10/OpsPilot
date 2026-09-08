@@ -18,6 +18,7 @@ _PG_DSN = TypeAdapter(PostgresDsn)
 LLMProviderName = Literal["fake", "anthropic"]
 EmbeddingProviderName = Literal["fake", "local"]
 RetrievalStrategyName = Literal["vector", "lexical", "hybrid"]
+RerankerName = Literal["none", "fake", "cross_encoder"]
 AppEnv = Literal["local", "ci", "staging", "prod"]
 
 
@@ -69,6 +70,16 @@ class Settings(BaseSettings):
     retrieval_candidate_k: int = Field(default=30, ge=1, le=200)
     # RRF smoothing constant (Cormack et al. 2009 use 60).
     rrf_k: int = Field(default=60, ge=1, le=1000)
+
+    # Phase 6: cross-encoder reranking. `none` = off (default; the reranker adds
+    # latency and the ml extra, and Experiment 2 decides whether it earns its
+    # place). `fake` = deterministic offline reranker for tests. `cross_encoder`
+    # = a local sentence-transformers CrossEncoder.
+    reranker: RerankerName = "none"
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # Candidates fetched from retrieval and handed to the reranker; it trims
+    # them back down to retrieval_top_k.
+    rerank_candidate_k: int = Field(default=20, ge=1, le=200)
 
     # --- Prompting ---
     prompt_version: str = "v1"
