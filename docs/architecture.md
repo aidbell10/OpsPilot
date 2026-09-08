@@ -24,8 +24,23 @@ POST /incidents/analyze
     → answer  OR  abstention  ("insufficient evidence")
 ```
 
-**Phase 3 status:** this is the vector-only slice of that pipeline —
-`opspilot.retrieval.semantic` (pgvector cosine top-K, no lexical/RRF/rerank yet),
+**Phase 5 status:** retrieval is now `vector` / `lexical` / `hybrid` (RRF), selected by
+`OPSPILOT_RETRIEVAL_STRATEGY` (default `hybrid`) and dispatched in one place —
+`opspilot.retrieval.strategy.retrieve_chunks`, called by both the API routes and the
+evaluation runner so they cannot drift:
+
+* `opspilot.retrieval.semantic` — pgvector cosine top-K (HNSW index).
+* `opspilot.retrieval.lexical` — PostgreSQL FTS over the generated `content_tsv` (GIN index);
+  `websearch_to_tsquery` + `ts_rank_cd`. Chunks with no lexical overlap are excluded, so this
+  arm can return fewer than *k* results.
+* `opspilot.retrieval.fusion` — Reciprocal Rank Fusion (`1/(k+rank)`, k=60); rank-only, so the
+  cosine and `ts_rank_cd` scales never need reconciling.
+* `opspilot.retrieval.hybrid` — pulls `retrieval_candidate_k` from each arm, RRF-fuses, keeps
+  top-K.
+* `opspilot.retrieval.filters` — `ChunkFilters` (service / doc type / version / environment /
+  timestamp window); the same object is applied identically to both arms.
+
+The reranking stage (Phase 6/7) is still not present. Generation is unchanged:
 `opspilot.generation.prompt` (evidence-grounded prompt, JSON-schema instructions),
 `opspilot.generation.parser` (JSON parse + Pydantic validation + citation
 verification, degrading to abstention on any failure — including the offline

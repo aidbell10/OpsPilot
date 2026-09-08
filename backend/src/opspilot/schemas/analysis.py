@@ -72,3 +72,4 @@ class AnalyzeResponse(BaseModel):
     evidence: list[EvidenceItem]
     related_incidents: list[RelatedIncident]
     retrieval_top_k: int
+    retrieval_strategy: str

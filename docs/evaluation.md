@@ -98,8 +98,17 @@ counts the providers return, not estimates of the run itself).
 ```bash
 cd backend
 uv run python -m opspilot.evaluation run --dataset-version gen2.0.0-seed42 --split dev
-# or: make eval-run  (defaults to the manifest's dataset_version and split=dev)
+uv run python -m opspilot.evaluation run --strategy vector   # vector | lexical | hybrid
+# or: make eval-run  (defaults to the manifest's dataset_version, split=dev, and
+#     OPSPILOT_RETRIEVAL_STRATEGY); make eval-experiment runs all three strategies + report
 ```
+
+**`--strategy`** (Phase 5) selects the retrieval arm for the run and is recorded on the
+`EvaluationRun` row (`retrieval_strategy`), so `vector` / `lexical` / `hybrid` runs sit
+side by side in the report. It defaults to `OPSPILOT_RETRIEVAL_STRATEGY` (`hybrid`). All
+three call the same `opspilot.retrieval.strategy.retrieve_chunks` dispatch the API uses;
+only the retrieval arm changes, everything downstream (prompt, generation, metrics) is
+identical.
 
 For each loaded case: embeds the query once, runs `opspilot.retrieval.semantic.search_chunks`
 / `search_historical_incidents` (the exact functions `POST /search` and
@@ -116,9 +125,9 @@ unanswerable case passes if the model abstained. This is deliberately strict: pa
 belongs in the individual metrics, not in a boolean.
 
 One `EvaluationRun` row is written per invocation (config snapshot: models, chunk size/overlap,
-top-K, `retrieval_strategy=vector`, `reranker=null`, prompt version, dataset version/split, git
-SHA when available) with `aggregate_metrics` (means, abstention P/R/F1, latency p50/p95, total
-+ mean cost) filled in after every case runs. Runs are an append-only history, not idempotent —
+top-K, `retrieval_strategy` (the `--strategy` for the run), `reranker=null`, prompt version,
+dataset version/split, git SHA when available) with `aggregate_metrics` (means, abstention
+P/R/F1, latency p50/p95, total + mean cost) filled in after every case runs. Runs are an append-only history, not idempotent —
 re-running is how a system change gets compared against the past.
 
 ## ⚠️ Fake vs. real LLM provider — read this before trusting any generation number
@@ -158,8 +167,8 @@ cd backend
 uv run python -m opspilot.evaluation report   # or: make eval-report
 ```
 
-Renders a plain-text comparison table across every persisted `EvaluationRun` — currently only
-the Phase 3 vector baseline. Later phases (hybrid retrieval, reranking, fine-tuned reranker,
-agent) each add rows with a different `retrieval_strategy`/`reranker` and appear in the same
-table automatically. **Reported numbers are computed from real system output only — never
-hand-written.**
+Renders a plain-text comparison table across every persisted `EvaluationRun`, one row per run,
+keyed by `strategy` / `reranker` / dataset version / git SHA. Phase 5 adds the `lexical` and
+`hybrid_rrf` rows next to the Phase 3 `vector` baseline; later phases (reranking, fine-tuned
+reranker, agent) slot in the same way with no change here. **Reported numbers are computed from
+real system output only — never hand-written.**

@@ -1,7 +1,8 @@
 """CLI entry point.
 
 uv run python -m opspilot.evaluation load-cases [--data-dir path] [--dataset-version v] [--dry-run]
-uv run python -m opspilot.evaluation run [--dataset-version v] [--split dev|test] [--notes "..."]
+uv run python -m opspilot.evaluation run [--dataset-version v] [--split dev|test]
+    [--strategy vector|lexical|hybrid] [--notes "..."]
 uv run python -m opspilot.evaluation report
 """
 
@@ -19,7 +20,7 @@ from opspilot.evaluation.loader import (
 )
 from opspilot.evaluation.report import build_report
 from opspilot.evaluation.runner import run_evaluation
-from opspilot.models.enums import EvalSplit
+from opspilot.models.enums import EvalSplit, RetrievalStrategy
 from opspilot.providers.factory import get_embedding_provider, get_llm_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -51,12 +52,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     settings = get_settings()
     dataset_version = args.dataset_version or dataset_version_from_manifest(DEFAULT_DATA_DIR)
     split = EvalSplit(args.split)
+    strategy = RetrievalStrategy.from_name(args.strategy or settings.retrieval_strategy)
 
     with session_scope() as session:
         run = run_evaluation(
             session,
             dataset_version=dataset_version,
             split=split,
+            strategy=strategy,
             embedding_provider=get_embedding_provider(),
             llm_provider=get_llm_provider(),
             settings=settings,
@@ -64,7 +67,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         print(
             f"run {run.id} [dataset_version={dataset_version} split={split.value} "
-            f"git_sha={run.git_sha} llm={run.llm_model} embedding={run.embedding_model}]"
+            f"strategy={run.retrieval_strategy.value} git_sha={run.git_sha} "
+            f"llm={run.llm_model} embedding={run.embedding_model}]"
         )
         for key, value in run.aggregate_metrics.items():
             print(f"  {key}: {value}")
@@ -90,6 +94,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p_run = sub.add_parser("run", help="run the baseline pipeline over a loaded dataset/split")
     p_run.add_argument("--dataset-version", type=str, default=None)
     p_run.add_argument("--split", type=str, default="dev", choices=["dev", "test"])
+    p_run.add_argument(
+        "--strategy",
+        type=str,
+        default=None,
+        choices=["vector", "lexical", "hybrid"],
+        help="retrieval strategy for this run (default: OPSPILOT_RETRIEVAL_STRATEGY)",
+    )
     p_run.add_argument("--notes", type=str, default="")
     p_run.set_defaults(func=_cmd_run)
 

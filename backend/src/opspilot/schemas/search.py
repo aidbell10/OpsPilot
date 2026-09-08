@@ -9,4 +9,5 @@ from opspilot.schemas.analysis import EvidenceItem
 
 class SearchResponse(BaseModel):
     query: str
+    strategy: str
     results: list[EvidenceItem]

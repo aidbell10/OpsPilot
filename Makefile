@@ -23,7 +23,8 @@ help:
 	@echo "ingest       ingest data/generated -> the configured Postgres (idempotent)"
 	@echo "ingest-dry-run   load + chunk data/generated without touching the DB"
 	@echo "eval-load    load data/generated/ground_truth.json -> evaluation_cases"
-	@echo "eval-run     run the baseline pipeline over the loaded dev split"
+	@echo "eval-run     run the pipeline over the dev split (OPSPILOT_RETRIEVAL_STRATEGY)"
+	@echo "eval-experiment   run vector + lexical + hybrid back to back, then report"
 	@echo "eval-report  print the cross-run comparison table"
 
 .PHONY: db-up db-down up down
@@ -61,7 +62,14 @@ ingest:          ; cd $(BACKEND) && uv run python -m opspilot.ingestion
 ingest-dry-run:  ; cd $(BACKEND) && uv run python -m opspilot.ingestion --dry-run
 
 # --- Phase 4: evaluation harness --------------------------------------------
-.PHONY: eval-load eval-run eval-report
+.PHONY: eval-load eval-run eval-experiment eval-report
 eval-load:   ; cd $(BACKEND) && uv run python -m opspilot.evaluation load-cases
 eval-run:    ; cd $(BACKEND) && uv run python -m opspilot.evaluation run
 eval-report: ; cd $(BACKEND) && uv run python -m opspilot.evaluation report
+
+# Phase 5: the vector-vs-lexical-vs-hybrid retrieval experiment (one run each).
+eval-experiment:
+	cd $(BACKEND) && uv run python -m opspilot.evaluation run --strategy vector  --notes "exp1 vector" \
+	 && uv run python -m opspilot.evaluation run --strategy lexical --notes "exp1 lexical" \
+	 && uv run python -m opspilot.evaluation run --strategy hybrid  --notes "exp1 hybrid" \
+	 && uv run python -m opspilot.evaluation report

@@ -1,22 +1,20 @@
-"""Run the baseline (vector-only) RAG pipeline over a set of evaluation cases.
+"""Run the RAG pipeline over a set of evaluation cases, for a given strategy.
 
-Reuses the exact retrieval-query and generation-parsing functions the API
-uses (:func:`opspilot.retrieval.semantic.search_chunks`,
+Reuses the exact retrieval and generation-parsing functions the API uses
+(:func:`opspilot.retrieval.strategy.retrieve_chunks` — the same dispatch
+``POST /search`` and ``POST /incidents/analyze`` call —
 :func:`opspilot.retrieval.semantic.search_historical_incidents`,
 :func:`opspilot.generation.prompt.build_user_prompt`,
 :func:`opspilot.generation.parser.parse_llm_output`) — the retrieval and
 generation *logic* is never reimplemented here.
 
-One deliberate deviation from ``POST /incidents/analyze``: that endpoint calls
-the convenience wrappers ``embed_and_search_chunks`` /
-``embed_and_search_historical_incidents`` (via ``opspilot.generation.parser.run_generation``
-for the LLM call), each of which embeds the query text itself. Cost accounting
-needs the embedding token count and the LLM's per-call token usage, which
-those wrappers don't surface. So this module embeds the query once (reusing
-the same vector for both the chunk and historical-incident searches — strictly
-more efficient than the endpoint's two separate embeddings of identical text)
-and calls the LLM provider directly, then hands its raw text to the same
-``parse_llm_output`` the endpoint uses. The retrieval query and the
+One deliberate deviation from the endpoints: they call
+``opspilot.generation.parser.run_generation`` and the ``embed_and_search_*``
+convenience wrappers, which embed the query internally and don't surface the
+embedding/LLM token counts cost accounting needs. So this module embeds the
+query once (reusing the vector for both the chunk and historical-incident
+searches) and calls the LLM provider directly, then hands its raw text to the
+same ``parse_llm_output`` the endpoint uses. The retrieval query and the
 parse/validate/citation-verify logic are 100% shared; only the thin
 orchestration wrappers that don't expose telemetry are bypassed.
 """
@@ -41,7 +39,9 @@ from opspilot.generation.prompt import SYSTEM_PROMPT, build_user_prompt
 from opspilot.models.enums import EvalSplit, RetrievalStrategy
 from opspilot.models.evaluation import EvaluationCase, EvaluationResult, EvaluationRun
 from opspilot.providers.base import EmbeddingProvider, LLMProvider
-from opspilot.retrieval.semantic import search_chunks, search_historical_incidents
+from opspilot.retrieval.filters import ChunkFilters
+from opspilot.retrieval.semantic import search_historical_incidents
+from opspilot.retrieval.strategy import retrieve_chunks
 from opspilot.schemas.analysis import RelatedIncident
 from opspilot.telemetry.cost import CostAccumulator
 
@@ -91,6 +91,7 @@ def _evaluate_case(
     session: Session,
     case: EvaluationCase,
     *,
+    strategy: RetrievalStrategy,
     embedding_provider: EmbeddingProvider,
     llm_provider: LLMProvider,
     settings: Settings,
@@ -102,8 +103,15 @@ def _evaluate_case(
     query_vector = embed_result.vectors[0]
 
     t_retrieval_start = time.perf_counter()
-    chunk_matches = search_chunks(
-        session, query_vector, top_k=settings.retrieval_top_k, service_name=case.service_name
+    chunk_matches = retrieve_chunks(
+        session,
+        strategy=strategy,
+        query_embedding=query_vector,
+        query_text=case.query,
+        top_k=settings.retrieval_top_k,
+        filters=ChunkFilters(service_name=case.service_name),
+        candidate_k=settings.retrieval_candidate_k,
+        rrf_k=settings.rrf_k,
     )
     historical_matches = search_historical_incidents(
         session,
@@ -207,6 +215,7 @@ def run_evaluation(
     *,
     dataset_version: str,
     split: EvalSplit,
+    strategy: RetrievalStrategy,
     embedding_provider: EmbeddingProvider,
     llm_provider: LLMProvider,
     settings: Settings,
@@ -240,7 +249,7 @@ def run_evaluation(
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
         top_k=settings.retrieval_top_k,
-        retrieval_strategy=RetrievalStrategy.VECTOR,
+        retrieval_strategy=strategy,
         reranker=None,
         prompt_version=settings.prompt_version,
         notes=notes,
@@ -264,6 +273,7 @@ def run_evaluation(
         evaluated = _evaluate_case(
             session,
             case,
+            strategy=strategy,
             embedding_provider=embedding_provider,
             llm_provider=llm_provider,
             settings=settings,
@@ -323,6 +333,7 @@ def run_evaluation(
         "latency_ms_p95": _percentile(total_latencies, 95),
         "total_cost_usd": sum(costs_usd),
         "mean_cost_usd_per_query": _mean(costs_usd),
+        "retrieval_strategy": strategy.value,
         "embedding_provider": embedding_provider.name,
         "llm_provider": llm_provider.name,
     }

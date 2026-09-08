@@ -1,7 +1,8 @@
-"""Vector-only semantic retrieval over ``document_chunks`` and ``historical_incidents``.
+"""Vector semantic retrieval over ``document_chunks`` and ``historical_incidents``.
 
-Lexical (Phase 5) and reranking (Phase 6/7) arms are added later without
-touching this module's shape — callers already get a plain ranked list.
+The lexical arm (:mod:`opspilot.retrieval.lexical`) and RRF fusion
+(:mod:`opspilot.retrieval.fusion`) build on the same ``ChunkMatch`` shape this
+module returns, so callers never learn which arm(s) produced a result.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from opspilot.models.document import Document, DocumentChunk
 from opspilot.models.enums import DocumentType
 from opspilot.models.historical_incident import HistoricalIncident
 from opspilot.providers.base import EmbeddingProvider
+from opspilot.retrieval.filters import ChunkFilters
 
 
 def _distance_to_score(distance: float) -> float:
@@ -53,8 +55,7 @@ def search_chunks(
     query_embedding: list[float],
     *,
     top_k: int,
-    service_name: str | None = None,
-    document_type: DocumentType | None = None,
+    filters: ChunkFilters | None = None,
 ) -> list[ChunkMatch]:
     """Top-``top_k`` chunks by cosine distance, with optional metadata filters."""
     distance = DocumentChunk.embedding.cosine_distance(query_embedding)
@@ -74,10 +75,8 @@ def search_chunks(
         .order_by(distance)
         .limit(top_k)
     )
-    if service_name is not None:
-        stmt = stmt.where(DocumentChunk.service_name == service_name)
-    if document_type is not None:
-        stmt = stmt.where(DocumentChunk.document_type == document_type)
+    for clause in (filters or ChunkFilters()).clauses():
+        stmt = stmt.where(clause)
 
     rows = session.execute(stmt).all()
     return [
@@ -136,13 +135,10 @@ def embed_and_search_chunks(
     query: str,
     *,
     top_k: int,
-    service_name: str | None = None,
-    document_type: DocumentType | None = None,
+    filters: ChunkFilters | None = None,
 ) -> list[ChunkMatch]:
     vector = embedding_provider.embed([query]).vectors[0]
-    return search_chunks(
-        session, vector, top_k=top_k, service_name=service_name, document_type=document_type
-    )
+    return search_chunks(session, vector, top_k=top_k, filters=filters)
 
 
 def embed_and_search_historical_incidents(

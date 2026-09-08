@@ -17,6 +17,7 @@ _PG_DSN = TypeAdapter(PostgresDsn)
 
 LLMProviderName = Literal["fake", "anthropic"]
 EmbeddingProviderName = Literal["fake", "local"]
+RetrievalStrategyName = Literal["vector", "lexical", "hybrid"]
 AppEnv = Literal["local", "ci", "staging", "prod"]
 
 
@@ -61,6 +62,13 @@ class Settings(BaseSettings):
     chunk_size: int = Field(default=512, ge=64, le=2048)
     chunk_overlap: int = Field(default=64, ge=0, le=512)
     retrieval_top_k: int = Field(default=8, ge=1, le=100)
+    # Phase 5: which retrieval arm(s) serve a query. `hybrid` = vector + lexical
+    # fused with RRF; the evaluation runner can override this per run to compare.
+    retrieval_strategy: RetrievalStrategyName = "hybrid"
+    # Candidates pulled from each arm before RRF fusion (hybrid only).
+    retrieval_candidate_k: int = Field(default=30, ge=1, le=200)
+    # RRF smoothing constant (Cormack et al. 2009 use 60).
+    rrf_k: int = Field(default=60, ge=1, le=1000)
 
     # --- Prompting ---
     prompt_version: str = "v1"

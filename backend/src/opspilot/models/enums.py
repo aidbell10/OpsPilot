@@ -55,3 +55,10 @@ class RetrievalStrategy(enum.StrEnum):
     VECTOR = "vector"
     LEXICAL = "lexical"
     HYBRID_RRF = "hybrid_rrf"
+
+    @classmethod
+    def from_name(cls, name: str) -> RetrievalStrategy:
+        """Accept the short config/CLI name ``hybrid`` as an alias for ``hybrid_rrf``."""
+        if name in ("hybrid", "hybrid_rrf"):
+            return cls.HYBRID_RRF
+        return cls(name)

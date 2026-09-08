@@ -1,4 +1,4 @@
-"""Incident investigation endpoints (Phase 3: vector-only baseline RAG)."""
+"""Incident investigation endpoints (Phase 5: strategy-configurable hybrid RAG)."""
 
 from __future__ import annotations
 
@@ -13,14 +13,13 @@ from opspilot.config import get_settings
 from opspilot.db.session import get_db
 from opspilot.generation.parser import run_generation
 from opspilot.generation.prompt import SYSTEM_PROMPT, build_user_prompt
-from opspilot.models.enums import Environment
+from opspilot.models.enums import Environment, RetrievalStrategy
 from opspilot.models.incident import Incident
 from opspilot.models.service import Service
 from opspilot.providers.factory import get_embedding_provider, get_llm_provider
-from opspilot.retrieval.semantic import (
-    embed_and_search_chunks,
-    embed_and_search_historical_incidents,
-)
+from opspilot.retrieval.filters import ChunkFilters
+from opspilot.retrieval.semantic import search_historical_incidents
+from opspilot.retrieval.strategy import retrieve_chunks
 from opspilot.schemas.analysis import AnalyzeResponse, EvidenceItem, RelatedIncident
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -38,18 +37,22 @@ def analyze_incident(request: AnalyzeRequest, db: Session = Depends(get_db)) -> 
     settings = get_settings()
     embedding_provider = get_embedding_provider()
     llm_provider = get_llm_provider()
+    strategy = RetrievalStrategy.from_name(settings.retrieval_strategy)
 
-    chunk_matches = embed_and_search_chunks(
+    query_vector = embedding_provider.embed([request.description]).vectors[0]
+    chunk_matches = retrieve_chunks(
         db,
-        embedding_provider,
-        request.description,
+        strategy=strategy,
+        query_embedding=query_vector,
+        query_text=request.description,
         top_k=settings.retrieval_top_k,
-        service_name=request.service,
+        filters=ChunkFilters(service_name=request.service),
+        candidate_k=settings.retrieval_candidate_k,
+        rrf_k=settings.rrf_k,
     )
-    historical_matches = embed_and_search_historical_incidents(
+    historical_matches = search_historical_incidents(
         db,
-        embedding_provider,
-        request.description,
+        query_vector,
         top_k=min(5, settings.retrieval_top_k),
         service_name=request.service,
     )
@@ -129,4 +132,5 @@ def analyze_incident(request: AnalyzeRequest, db: Session = Depends(get_db)) -> 
         evidence=evidence,
         related_incidents=related_incidents,
         retrieval_top_k=settings.retrieval_top_k,
+        retrieval_strategy=strategy.value,
     )

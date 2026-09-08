@@ -15,6 +15,16 @@ def test_defaults_are_offline_safe() -> None:
     assert s.embedding_provider in {"fake", "local"}
     assert s.embedding_dim == 384
     assert s.chunk_overlap < s.chunk_size
+    assert s.retrieval_strategy == "hybrid"
+    assert s.rrf_k == 60
+
+
+@pytest.mark.unit
+def test_retrieval_strategy_env_override(set_env: Callable[..., None]) -> None:
+    set_env(retrieval_strategy="lexical", retrieval_candidate_k="12")
+    s = get_settings()
+    assert s.retrieval_strategy == "lexical"
+    assert s.retrieval_candidate_k == 12
 
 
 @pytest.mark.unit

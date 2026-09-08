@@ -11,7 +11,7 @@ from opspilot.evaluation.loader import upsert_ground_truth
 from opspilot.evaluation.report import build_report
 from opspilot.evaluation.runner import run_evaluation
 from opspilot.ingestion.pipeline import ingest_corpus
-from opspilot.models.enums import EvalSplit
+from opspilot.models.enums import EvalSplit, RetrievalStrategy
 from opspilot.models.evaluation import EvaluationResult
 from opspilot.providers.fake import FakeEmbeddingProvider, FakeLLMProvider
 
@@ -39,12 +39,15 @@ def test_run_evaluation_persists_run_and_results(db_session: Session, clean_db: 
         db_session,
         dataset_version=_DATASET_VERSION,
         split=EvalSplit.DEV,
+        strategy=RetrievalStrategy.VECTOR,
         embedding_provider=FakeEmbeddingProvider(dim=384),
         llm_provider=FakeLLMProvider(),
         settings=settings,
         notes="integration test",
     )
     db_session.commit()
+
+    assert run.retrieval_strategy is RetrievalStrategy.VECTOR
 
     assert run.id is not None
     assert run.dataset_version == _DATASET_VERSION
@@ -98,6 +101,7 @@ def test_report_includes_the_persisted_run(db_session: Session, clean_db: None) 
         db_session,
         dataset_version=_DATASET_VERSION,
         split=EvalSplit.DEV,
+        strategy=RetrievalStrategy.VECTOR,
         embedding_provider=FakeEmbeddingProvider(dim=384),
         llm_provider=FakeLLMProvider(),
         settings=settings,
@@ -107,3 +111,40 @@ def test_report_includes_the_persisted_run(db_session: Session, clean_db: None) 
     report = build_report(db_session)
     assert _DATASET_VERSION in report
     assert "vector" in report
+
+
+def test_hybrid_and_lexical_strategies_are_recorded(db_session: Session, clean_db: None) -> None:
+    _seed(db_session)
+    settings = get_settings()
+
+    for strategy in (RetrievalStrategy.LEXICAL, RetrievalStrategy.HYBRID_RRF):
+        run = run_evaluation(
+            db_session,
+            dataset_version=_DATASET_VERSION,
+            split=EvalSplit.DEV,
+            strategy=strategy,
+            embedding_provider=FakeEmbeddingProvider(dim=384),
+            llm_provider=FakeLLMProvider(),
+            settings=settings,
+        )
+        db_session.commit()
+        assert run.retrieval_strategy is strategy
+        assert run.aggregate_metrics["retrieval_strategy"] == strategy.value
+        assert run.aggregate_metrics["n_cases"] == 2
+
+    # the answerable case's required doc is lexically obvious ("promotion",
+    # "validate_cart", "HTTP 500") — hybrid must still recall it.
+    hybrid_results = (
+        db_session.execute(
+            select(EvaluationResult).where(
+                EvaluationResult.case_id == "gt-checkout-500-01",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert any(r.retrieval_metrics["recall_at_k"] == 1.0 for r in hybrid_results)
+
+    report = build_report(db_session)
+    assert "hybrid_rrf" in report
+    assert "lexical" in report

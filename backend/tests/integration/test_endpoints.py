@@ -33,7 +33,30 @@ def test_search_with_no_data_returns_empty_results(client: TestClient, clean_db:
     assert resp.status_code == 200
     body = resp.json()
     assert body["query"] == "checkout 500 errors"
+    assert body["strategy"] == "hybrid_rrf"  # default OPSPILOT_RETRIEVAL_STRATEGY
     assert body["results"] == []
+
+
+def test_search_strategy_override_is_echoed(
+    client: TestClient, db_session: Session, clean_db: None
+) -> None:
+    ingest_corpus(
+        db_session,
+        tiny_corpus(),
+        embedding_provider=FakeEmbeddingProvider(dim=384),
+        chunk_size=64,
+        chunk_overlap=8,
+    )
+    db_session.commit()
+
+    resp = client.post(
+        "/search",
+        json={"query": "checkout HTTP 500 promotion validate_cart", "strategy": "lexical"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["strategy"] == "lexical"
+    assert len(body["results"]) >= 1
 
 
 def test_search_returns_ingested_evidence(
@@ -85,6 +108,7 @@ def test_analyze_with_fake_llm_returns_abstained_result(client: TestClient, clea
     assert body["analysis"]["evidence_sufficient"] is False
     assert body["analysis"]["abstain_reason"]
     assert body["incident_id"]
+    assert body["retrieval_strategy"] == "hybrid_rrf"
 
 
 def test_analyze_persists_an_incident_row(
