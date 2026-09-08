@@ -6,7 +6,7 @@ it. **No numbers are entered here by hand** — they are copied from harness out
 | # | Question | Phase | Result |
 |--:|----------|-------|--------|
 | 1 | vector-only vs lexical-only vs hybrid (RRF) retrieval | 5 | hybrid best on nDCG@10 & MRR; lexical ≈ hybrid on recall on this corpus (see below) |
-| 2 | hybrid vs hybrid + pretrained cross-encoder reranker | 6 | pending |
+| 2 | hybrid vs hybrid + pretrained cross-encoder reranker | 6 | rerank: Recall@8 0.88 → 0.92, nDCG@10 flat, +830 ms/query — recall gain at a steep CPU-latency cost |
 | 3 | pretrained vs fine-tuned cross-encoder reranker | 7 | pending |
 | 4 | one-shot RAG vs deterministic retrieve→verify→answer vs LangGraph agent | 9 | pending |
 
@@ -55,6 +55,45 @@ cd .. && make eval-experiment            # vector, lexical, hybrid, then the rep
 Retrieval metrics don't touch the LLM, so `OPSPILOT_LLM_PROVIDER=fake` is fine and free. The
 **embedding** provider does matter: `fake` embeddings are token-hash vectors, not a real
 semantic retriever — never publish a fake-embedding vector arm as a result.
+
+> **Reproduced 2026-09-07 at `31563c1`** on a fresh ingest: vector 0.864 / lexical 0.891 /
+> hybrid 0.882 Recall@8; nDCG@10 0.970 / 0.973 / 0.988. Run-to-run drift of ~±1 pt on Recall@8
+> comes from HNSW's approximate nearest-neighbour search (vector) and uuid tie-breaks between
+> equal-`ts_rank_cd` chunks (lexical, and hybrid via it) — the qualitative ordering is stable.
+
+### Experiment 2 — pretrained cross-encoder reranker on top of hybrid
+
+- **Date / git SHA:** 2026-09-07 / `31563c1`
+- **Dataset version / split:** `gen2.0.0-seed42` / dev (22 cases)
+- **Fixed config:** as Experiment 1, plus `rerank_candidate_k=20`; reranker
+  `cross-encoder/ms-marco-MiniLM-L-6-v2` (local, CPU); retrieval strategy fixed at `hybrid`
+- **Variants compared:** `--reranker none` vs `--reranker cross_encoder`
+- **Metrics** (`evaluation_runs` rows `2026-09-08T01:30:{47,59}Z`):
+
+  | pipeline | Recall@8 | MRR | nDCG@10 | evidence coverage | mean rerank ms | latency p50 / p95 (ms) |
+  |----------|---------:|----:|--------:|------------------:|---------------:|-----------------------:|
+  | hybrid                 | 0.882 | 1.000 | **0.988** | 1.000 |   0 |  26 /  116 |
+  | hybrid + cross-encoder  | **0.920** | 1.000 | 0.986 | 1.000 | 819 | 858 / 1081 |
+
+- **Conclusion — the reranker buys recall, not ranking, and the bill is latency.**
+  Re-scoring a 20-candidate pool and keeping the top 8 pulls a relevant chunk that hybrid
+  ranked 9th–20th up into the prompt: **Recall@8 0.88 → 0.92** (+3.8 pts, and the same +3–4 pt
+  gain showed on an earlier run, so it's real, not noise). But **nDCG@10 does not improve**
+  (0.988 → 0.986 — a rounding-error regression): among the items hybrid already had in the top
+  10, RRF's order is as good as the cross-encoder's here. And the cost is brutal —
+  **~819 ms/query of rerank compute on CPU**, taking p50 latency from 26 ms to 858 ms (~33×),
+  p95 past 1 s. MRR is already 1.0 for both (the first relevant chunk is always rank 1), so the
+  reranker can't help there.
+- **Recommendation.** Keep `OPSPILOT_RERANKER=none` as the default. The recall gain is
+  worth having, but not at 33× latency for a portfolio demo — revisit when (a) the corpus is
+  large enough that top-8 recall genuinely hurts, (b) it runs on GPU or with a smaller
+  candidate pool / batched inference, (c) the **fine-tuned** cross-encoder (Phase 7, Experiment
+  3) can be compared against this off-the-shelf baseline, and (d) a real-LLM run can answer the
+  question this experiment can't: does the extra recall actually produce better, better-grounded
+  answers, or just more context?
+
+**Reproduce:** as Experiment 1, then `make eval-experiment-rerank` (hybrid with vs without the
+cross-encoder). First run downloads `cross-encoder/ms-marco-MiniLM-L-6-v2` (~80 MB).
 
 ## Template
 
