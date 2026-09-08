@@ -228,7 +228,7 @@ Docker is unavailable.
 | 2  | Deterministic synthetic knowledge base (coherent fictional company, planted ground truth) | ✅ done |
 | 3  | Baseline RAG: ingestion, chunking, pgvector retrieval, structured cited answers, abstention | ✅ done |
 | 4  | Versioned evaluation harness (retrieval / generation / reliability / performance / cost metrics) | ✅ done |
-| 5  | Hybrid retrieval (vector + FTS + RRF), metadata filters, strategy-per-eval-run; measured vector-vs-lexical-vs-hybrid experiment | ✅ code done, benchmark pending a live DB run |
+| 5  | Hybrid retrieval (vector + FTS + RRF), metadata filters, strategy-per-eval-run; measured vector-vs-lexical-vs-hybrid experiment | ✅ done ([Experiment 1](docs/experiments.md)) |
 | 6  | Pretrained cross-encoder reranking, measured | ⏳ |
 | 7  | Fine-tuned PyTorch cross-encoder reranker (hard negatives, loss curves, A/B/C comparison) | ⏳ |
 | 8  | LangGraph agent with read-only tools and hard budgets | ⏳ |
