@@ -65,6 +65,7 @@ def _upsert_services(session: Session, records: list[ServiceRecord]) -> dict[str
         existing.repo_url = rec.repo_url
         existing.tier = rec.tier
         existing.owning_team = rec.owning_team
+        existing.depends_on = rec.depends_on
         session.flush()
         service_ids[rec.name] = existing.id
     return service_ids

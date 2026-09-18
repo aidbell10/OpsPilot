@@ -33,8 +33,9 @@ production concerns (Docker, CI/CD, observability, cost/latency tradeoffs).
 
 ## Architecture
 
-The pipeline is deliberately built from transparent Python. A framework (LangGraph)
-is introduced only for agent control flow, in a later phase.
+The pipeline is deliberately built from transparent Python. A framework (LangGraph) is
+used only for agent control flow (Phase 8) — a two-node graph on top of plain,
+unit-tested retrieval/tool/parsing code, not a framework that hides the logic.
 
 ```
                  ┌─────────────┐
@@ -170,6 +171,23 @@ point: a parse/validation failure degrades to an explicit "insufficient evidence
 instead of a 500). Set `OPSPILOT_LLM_PROVIDER=anthropic` and `OPSPILOT_ANTHROPIC_API_KEY` for
 real generation.
 
+### Agentic investigation (Phase 8)
+
+```bash
+curl -X POST localhost:8000/incidents/investigate -H 'content-type: application/json' \
+  -d '{"description": "payments authorizations are failing with PAY-50231 since the release", "service": "payments", "max_tool_calls": 4}'
+```
+
+An alternative to `/incidents/analyze`: instead of one fixed retrieve-then-generate pass, a
+LangGraph loop lets the LLM choose which read-only tool to call next (`search_docs`,
+`find_similar_incidents`, `get_incident_logs`, `get_deployment`,
+`get_service_dependencies`), building its own evidence trail before answering — bounded by a
+hard budget (`OPSPILOT_AGENT_MAX_TOOL_CALLS`/`_MAX_COST_USD`/`_MAX_SECONDS`, overridable
+downward per request via `max_tool_calls`) that forces an abstention rather than letting a
+looping or chatty model run away. Same abstention behavior under the `fake` provider as
+`/analyze` — a malformed decision aborts immediately with zero tool calls. See
+[`docs/architecture.md`](docs/architecture.md#agentic-investigation-phase-8).
+
 ### Evaluation harness (Phase 4)
 
 ```bash
@@ -251,7 +269,7 @@ Docker is unavailable.
 | 5  | Hybrid retrieval (vector + FTS + RRF), metadata filters, strategy-per-eval-run; measured vector-vs-lexical-vs-hybrid experiment | ✅ done ([Experiment 1](docs/experiments.md)) |
 | 6  | Pretrained cross-encoder reranking (`RerankProvider`, `--reranker`), measured | ✅ done ([Experiment 2](docs/experiments.md)) |
 | 7  | Fine-tuned PyTorch cross-encoder reranker (hard negatives, loss curves, A/B/C comparison) | ✅ done ([Experiment 3](docs/experiments.md)) |
-| 8  | LangGraph agent with read-only tools and hard budgets | ⏳ |
+| 8  | LangGraph agent with read-only tools and hard budgets | ✅ done |
 | 9  | "Does the agent help?" experiment + complexity router | ⏳ |
 | 10 | Next.js frontend incl. a first-class evaluation dashboard | ⏳ |
 | 11 | OpenTelemetry instrumentation | ⏳ |

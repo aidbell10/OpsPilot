@@ -36,7 +36,7 @@ below. Never invent a citation id.
 - Do not state facts that are not present in the evidence."""
 
 
-def _format_chunk(chunk: ChunkMatch) -> str:
+def format_chunk(chunk: ChunkMatch) -> str:
     return (
         f"chunk_id: {chunk.chunk_id}\n"
         f"{chunk.title} ({chunk.source_path or 'n/a'}, {chunk.document_type.value}, "
@@ -45,7 +45,7 @@ def _format_chunk(chunk: ChunkMatch) -> str:
     )
 
 
-def _format_related_incident(incident: RelatedIncident) -> str:
+def format_related_incident(incident: RelatedIncident) -> str:
     return (
         f"[incident:{incident.incident_id}] {incident.title} "
         f"(service={incident.service_name}, severity={incident.severity})\n"
@@ -72,13 +72,13 @@ def build_user_prompt(
 
     lines.append("\n## Retrieved evidence")
     if evidence:
-        lines.extend(_format_chunk(c) for c in evidence)
+        lines.extend(format_chunk(c) for c in evidence)
     else:
         lines.append("(no evidence was retrieved)")
 
     lines.append("\n## Related historical incidents")
     if related_incidents:
-        lines.extend(_format_related_incident(i) for i in related_incidents)
+        lines.extend(format_related_incident(i) for i in related_incidents)
     else:
         lines.append("(none found)")
 

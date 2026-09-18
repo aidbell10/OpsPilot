@@ -36,6 +36,21 @@ def test_analyze_rejects_too_short_description(client: TestClient) -> None:
 
 
 @pytest.mark.unit
+def test_investigate_rejects_too_short_description(client: TestClient) -> None:
+    resp = client.post("/incidents/investigate", json={"description": "short"})
+    assert resp.status_code == 422
+
+
+@pytest.mark.unit
+def test_investigate_rejects_out_of_range_max_tool_calls(client: TestClient) -> None:
+    resp = client.post(
+        "/incidents/investigate",
+        json={"description": "checkout is returning 500s", "max_tool_calls": 50},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.unit
 def test_search_rejects_bad_document_type(client: TestClient) -> None:
     resp = client.post("/search", json={"query": "checkout 500s", "document_type": "not-a-type"})
     assert resp.status_code == 422
@@ -44,4 +59,11 @@ def test_search_rejects_bad_document_type(client: TestClient) -> None:
 @pytest.mark.unit
 def test_openapi_lists_the_full_contract(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
-    assert {"/health", "/health/ready", "/incidents/analyze", "/search", "/feedback"} <= set(paths)
+    assert {
+        "/health",
+        "/health/ready",
+        "/incidents/analyze",
+        "/incidents/investigate",
+        "/search",
+        "/feedback",
+    } <= set(paths)

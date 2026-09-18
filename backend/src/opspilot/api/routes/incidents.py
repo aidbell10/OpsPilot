@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opspilot.agent import investigate
+from opspilot.agent.budget import AgentBudget
 from opspilot.config import get_settings
 from opspilot.db.session import get_db
 from opspilot.generation.parser import run_generation
@@ -24,6 +26,7 @@ from opspilot.providers.factory import (
 from opspilot.retrieval.filters import ChunkFilters
 from opspilot.retrieval.semantic import search_historical_incidents
 from opspilot.retrieval.strategy import retrieve_chunks
+from opspilot.schemas.agent import InvestigateResponse
 from opspilot.schemas.analysis import AnalyzeResponse, EvidenceItem, RelatedIncident
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -34,6 +37,14 @@ class AnalyzeRequest(BaseModel):
     service: str | None = None
     version: str | None = None
     environment: Environment | None = None
+
+
+class InvestigateRequest(BaseModel):
+    description: str = Field(min_length=10, max_length=8000)
+    service: str | None = None
+    version: str | None = None
+    environment: Environment | None = None
+    max_tool_calls: int | None = Field(default=None, ge=1, le=20)
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
@@ -141,4 +152,72 @@ def analyze_incident(request: AnalyzeRequest, db: Session = Depends(get_db)) -> 
         retrieval_top_k=settings.retrieval_top_k,
         retrieval_strategy=strategy.value,
         reranker=rerank_provider.model if rerank_provider is not None else None,
+    )
+
+
+@router.post("/investigate", response_model=InvestigateResponse)
+def investigate_incident(
+    request: InvestigateRequest, db: Session = Depends(get_db)
+) -> InvestigateResponse:
+    """Agentic alternative to ``/analyze`` (Phase 8): the LLM chooses which read-only
+    tools to call, within a hard budget, instead of one fixed retrieve-then-generate pass.
+    """
+    settings = get_settings()
+    budget = (
+        AgentBudget(
+            max_tool_calls=request.max_tool_calls,
+            max_cost_usd=settings.agent_max_cost_usd,
+            max_seconds=settings.agent_max_seconds,
+        )
+        if request.max_tool_calls is not None
+        else None
+    )
+
+    run = investigate(
+        db,
+        description=request.description,
+        service_name=request.service,
+        version=request.version,
+        environment=request.environment.value if request.environment else None,
+        llm_provider=get_llm_provider(),
+        embedding_provider=get_embedding_provider(),
+        rerank_provider=get_rerank_provider(),
+        settings=settings,
+        budget=budget,
+    )
+
+    service_id = None
+    if request.service:
+        service_id = db.execute(
+            select(Service.id).where(Service.name == request.service)
+        ).scalar_one_or_none()
+
+    title = (
+        request.description
+        if len(request.description) <= 297
+        else request.description[:297] + "..."
+    )
+    incident = Incident(
+        id=uuid.uuid4(),
+        title=title,
+        description=request.description,
+        service_id=service_id,
+        reported_service=request.service,
+        reported_version=request.version,
+        environment=request.environment,
+        analysis=run.finding.model_dump(),
+    )
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+
+    return InvestigateResponse(
+        incident_id=str(incident.id),
+        finding=run.finding,
+        observations=run.observations,
+        decision_log=run.decision_log,
+        stop_reason=run.stop_reason,
+        tool_calls_used=run.tool_calls_used,
+        elapsed_seconds=run.elapsed_seconds,
+        cost=run.cost,
     )

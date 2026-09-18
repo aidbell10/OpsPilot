@@ -61,6 +61,54 @@ verification, degrading to abstention on any failure — including the offline
 `document_chunks` / `deployments` / `historical_incidents`
 (`uv run python -m opspilot.ingestion`, or `make ingest`).
 
+## Agentic investigation (Phase 8)
+
+```
+POST /incidents/investigate
+  → orchestrator.investigate
+    → decide   (LLM: call a tool, or answer)  ─┐
+    → act      (run the tool, record an        │  loop until
+                observation, or a clean         │  final_answer or
+                failure — never a crash)        │  budget exhausted
+    └────────────────────────────────────────┘
+    → citation-verified AgentFinding  OR  abstention
+```
+
+An alternative to `/incidents/analyze`'s one fixed retrieve-then-generate pass: the LLM
+chooses which of five **read-only** tools to call and in what order
+(`opspilot.agent.tools`: `search_docs`, `find_similar_incidents`, `get_incident_logs`,
+`get_deployment`, `get_service_dependencies`), building its own evidence trail before
+answering. `opspilot.agent.graph` is a two-node LangGraph `StateGraph` (`decide` / `act`) —
+the whole control-flow contribution LangGraph makes to this project; the decision protocol,
+citation verification, and every tool are plain, unit-tested Python underneath it, per the
+"transparent core" principle above.
+
+* **No native tool-calling.** `LLMProvider.complete` stays `(system, user) -> text` — the same
+  contract Phase 3 established, unchanged so a future Phase-9 provider only ever needs to
+  implement one method. The agent's "which tool next" decision is a Pydantic-validated JSON
+  object (`opspilot.schemas.agent.AgentDecision`), parsed by `opspilot.agent.parser` with the
+  exact same philosophy as `generation.parser`: malformed JSON is an immediate abstention
+  (never a crash), and an uncited "sufficient evidence" claim is downgraded to an abstention.
+  An *unknown tool name*, unlike malformed JSON, is treated as recoverable — it's recorded as a
+  failed observation and the model gets another turn, the same way a human's typo isn't fatal.
+* **Hard budgets, checked before every LLM call** (`opspilot.agent.budget.BudgetTracker`):
+  `max_tool_calls`, `max_cost_usd` (reusing the Phase-1 `CostAccumulator`), `max_seconds`.
+  Once exhausted, the next `decide` call is told this is its last turn; if the model still asks
+  for a tool anyway, that attempt is overridden into an abstention rather than honored — `act`
+  can never run once the budget is spent, regardless of what the model wants.
+* **Read-only by construction, not by policy.** Every tool is a parameterized SQLAlchemy
+  `select` (or the existing retrieval/generation helpers) behind a validated argument schema;
+  there is no code path here to raw SQL, a shell, a deployment, or any mutation. Remediation is
+  always a `recommended_actions` string for a human to review — the agent never claims to have
+  performed one.
+* **`query_metrics`** (in the original roadmap sketch) is deliberately not implemented: this
+  project has no metrics/time-series backend, and fabricating one to give the tool something
+  to return would violate the "no fabricated numbers, ever" rule. Five real tools beat six
+  where one always lies.
+* `services.depends_on` (migration `0002`) is new: present in the Phase 2 generator's
+  `ServiceRecord` since Phase 1 but never persisted until `get_service_dependencies` needed a
+  real column instead of re-reading `data/generated/services.json`.
+
 ## Components
 
 | Package | Responsibility | Phase |

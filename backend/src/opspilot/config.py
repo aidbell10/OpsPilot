@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     # them back down to retrieval_top_k.
     rerank_candidate_k: int = Field(default=20, ge=1, le=200)
 
+    # Phase 8: LangGraph agentic investigation. Hard budgets so a misbehaving
+    # or unusually chatty LLM can never run away — every field bounds the
+    # investigation, not just guides it (see opspilot.agent.budget).
+    agent_max_tool_calls: int = Field(default=6, ge=1, le=20)
+    agent_max_cost_usd: float = Field(default=0.50, gt=0.0)
+    agent_max_seconds: float = Field(default=60.0, gt=0.0)
+
     # --- Prompting ---
     prompt_version: str = "v1"
 

@@ -18,6 +18,9 @@ def test_defaults_are_offline_safe() -> None:
     assert s.retrieval_strategy == "hybrid"
     assert s.rrf_k == 60
     assert s.reranker == "none"  # reranking is opt-in
+    assert s.agent_max_tool_calls == 6
+    assert s.agent_max_cost_usd > 0.0
+    assert s.agent_max_seconds > 0.0
 
 
 @pytest.mark.unit
