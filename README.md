@@ -200,14 +200,19 @@ uv run python -m opspilot.evaluation report              # comparison table acro
 # or: make eval-load / make eval-run / make eval-report
 # make eval-experiment         -> vector, lexical, hybrid, then the report
 # make eval-experiment-rerank  -> hybrid with vs without the cross-encoder, then the report
+uv run python -m opspilot.evaluation run --strategy agent --difficulty multi_hop,adversarial  # Phase 9
+# make eval-experiment-agent  -> one-shot vs deterministic vs agent on the hard cases, then the report
 ```
 
 Retrieval metrics (Recall@K, MRR, nDCG@10, evidence coverage) are real under any embedding
 provider. Generation metrics (citation precision, hallucination rate, abstention P/R/F1) are
 only meaningful with `OPSPILOT_LLM_PROVIDER=anthropic` — under the default `fake` provider
 every case abstains by design, which is an honest reflection of the offline provider, not of
-system quality. See [`docs/evaluation.md`](docs/evaluation.md) for the full methodology and
-field-mapping decisions.
+system quality. `--strategy agent` runs the Phase 8 agent through this same harness (see
+[Experiment 4](docs/experiments.md)) — `recall_at_k`/`mrr`/`ndcg_at_10` are `n/a` for it by
+design (the agent's evidence isn't a ranked chunk list); everything else lines up in the same
+`opspilot.evaluation report` table. See [`docs/evaluation.md`](docs/evaluation.md) for the full
+methodology and field-mapping decisions.
 
 ### Tests
 
@@ -270,7 +275,7 @@ Docker is unavailable.
 | 6  | Pretrained cross-encoder reranking (`RerankProvider`, `--reranker`), measured | ✅ done ([Experiment 2](docs/experiments.md)) |
 | 7  | Fine-tuned PyTorch cross-encoder reranker (hard negatives, loss curves, A/B/C comparison) | ✅ done ([Experiment 3](docs/experiments.md)) |
 | 8  | LangGraph agent with read-only tools and hard budgets | ✅ done |
-| 9  | "Does the agent help?" experiment + complexity router | ⏳ |
+| 9  | "Does the agent help?" experiment + complexity router | 🛠 harness built ([Experiment 4](docs/experiments.md) — pending a paid run) |
 | 10 | Next.js frontend incl. a first-class evaluation dashboard | ⏳ |
 | 11 | OpenTelemetry instrumentation | ⏳ |
 | 12 | Full test matrix incl. adversarial (prompt injection in retrieved docs) | ⏳ |

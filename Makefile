@@ -26,6 +26,7 @@ help:
 	@echo "eval-run     run the pipeline over the dev split (OPSPILOT_RETRIEVAL_STRATEGY)"
 	@echo "eval-experiment   run vector + lexical + hybrid back to back, then report"
 	@echo "eval-experiment-rerank   hybrid with vs without the cross-encoder, then report"
+	@echo "eval-experiment-agent    one-shot vs deterministic vs agent on hard incidents (needs a real LLM key)"
 	@echo "eval-report  print the cross-run comparison table"
 	@echo "ml-dataset   build the labeled reranker fine-tuning dataset -> ml/datasets"
 	@echo "ml-train     fine-tune the cross-encoder reranker -> ml/checkpoints"
@@ -83,6 +84,17 @@ eval-experiment:
 eval-experiment-rerank:
 	cd $(BACKEND) && uv run python -m opspilot.evaluation run --strategy hybrid --reranker none          --notes "exp2 hybrid" \
 	 && uv run python -m opspilot.evaluation run --strategy hybrid --reranker cross_encoder --notes "exp2 hybrid+rerank" \
+	 && uv run python -m opspilot.evaluation report
+
+# Phase 9: one-shot RAG vs deterministic hybrid vs the LangGraph agent, on the
+# hard (multi_hop/adversarial) incidents. NEEDS OPSPILOT_LLM_PROVIDER=anthropic
+# + OPSPILOT_ANTHROPIC_API_KEY — under the default fake provider every case
+# abstains for all three, which is a real (if useless) result, not an error.
+.PHONY: eval-experiment-agent
+eval-experiment-agent:
+	cd $(BACKEND) && uv run python -m opspilot.evaluation run --strategy vector --difficulty multi_hop,adversarial --notes "exp4 one-shot vector" \
+	 && uv run python -m opspilot.evaluation run --strategy hybrid --reranker none --difficulty multi_hop,adversarial --notes "exp4 deterministic hybrid" \
+	 && uv run python -m opspilot.evaluation run --strategy agent --difficulty multi_hop,adversarial --notes "exp4 agent" \
 	 && uv run python -m opspilot.evaluation report
 
 # --- Phase 7: fine-tuned PyTorch cross-encoder reranker -------------------

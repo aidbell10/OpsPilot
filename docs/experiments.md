@@ -165,6 +165,57 @@ make db-up && cd backend && uv run python -m opspilot.ingestion
 uv run python ../ml/eval_experiment3.py   # -> ml/reports/experiment3_results.json
 ```
 
+### Experiment 4 — one-shot RAG vs deterministic retrieve→verify→answer vs LangGraph agent
+
+**Status: PENDING — the harness is built and verified (159 tests, wiring checked under the
+offline `fake` LLM), but not yet run with a real LLM.** Accuracy, groundedness, and
+hallucination are undefined under `fake` (every case abstains by construction — see
+`docs/evaluation.md`), so there is nothing honest to report here until this runs against
+`OPSPILOT_LLM_PROVIDER=anthropic`. Per this file's own rule, no numbers are entered by hand —
+none are entered at all until the real run produces them.
+
+- **Question:** on the corpus's 13 hard cases (11 `multi_hop` + 2 `adversarial`), does letting
+  an LLM choose its own tool calls (Phase 8's agent) produce better, better-grounded answers
+  than a fixed pipeline — and is it worth the extra cost/latency?
+- **Fixed config:** `BAAI/bge-small-en-v1.5` embeddings; `OPSPILOT_LLM_PROVIDER=anthropic`,
+  `OPSPILOT_LLM_MODEL` held constant across all three arms (same model, so any difference is
+  the pipeline, not the model)
+- **Variants compared:**
+  A. one-shot RAG — `--strategy vector` (no rerank, no hybrid, no agent: the simplest possible
+     pipeline)
+  B. deterministic retrieve→verify→answer — `--strategy hybrid --reranker none` (the project's
+     current recommended default per Experiments 1–2)
+  C. agent — `--strategy agent` (Phase 8, bounded by `OPSPILOT_AGENT_MAX_TOOL_CALLS`/
+     `_MAX_COST_USD`/`_MAX_SECONDS`)
+- **Metrics that generalize across all three** (see `docs/evaluation.md` for why
+  `recall_at_k`/`mrr`/`ndcg_at_10` don't extend to C): `evidence_coverage`,
+  `hallucinated_forbidden_claim`, abstention P/R/F1, `pass_rate`, latency p50/p95, cost/query.
+  A and B additionally get `recall_at_k`/`mrr`/`ndcg_at_10`/`citation_precision`; C gets
+  `citation_relevance` and `mean_tool_calls_used` instead.
+- **Complexity router — deliberately not built.** The plan calls for "a complexity router if
+  the agent doesn't earn its cost." Building one before this experiment runs would mean
+  guessing at a threshold with no evidence, which is exactly backwards for a project whose rule
+  is real-experiment-or-nothing. If C beats B by enough to justify its cost/latency on the hard
+  cases, no router is needed (route everything hard to the agent); if it doesn't, the router
+  (and its threshold) gets designed from what this experiment actually shows, not before.
+
+**To run:**
+
+```bash
+make db-up
+cd backend
+uv run python -m opspilot.ingestion
+uv run python -m opspilot.evaluation load-cases
+export OPSPILOT_LLM_PROVIDER=anthropic
+export OPSPILOT_ANTHROPIC_API_KEY=sk-...
+cd .. && make eval-experiment-agent   # A, B, C on the hard cases, then the report
+```
+
+13 hard cases × 3 arms = 39 real Anthropic calls minimum (the agent may call the LLM more than
+once per case, up to its budget) — small but not free. Update this section with the real
+numbers, the honest read on them, and either a built router or a documented reason not to,
+once it runs.
+
 ## Template
 
 ```

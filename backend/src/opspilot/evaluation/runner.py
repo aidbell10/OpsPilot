@@ -38,7 +38,7 @@ from opspilot.config import Settings
 from opspilot.evaluation import metrics as m
 from opspilot.generation.parser import parse_llm_output
 from opspilot.generation.prompt import SYSTEM_PROMPT, build_user_prompt
-from opspilot.models.enums import EvalSplit, RetrievalStrategy
+from opspilot.models.enums import Difficulty, EvalSplit, RetrievalStrategy
 from opspilot.models.evaluation import EvaluationCase, EvaluationResult, EvaluationRun
 from opspilot.providers.base import EmbeddingProvider, LLMProvider, RerankProvider
 from opspilot.retrieval.filters import ChunkFilters
@@ -230,6 +230,28 @@ def _evaluate_case(
     )
 
 
+def select_cases(
+    session: Session,
+    *,
+    dataset_version: str,
+    split: EvalSplit,
+    difficulties: set[Difficulty] | None = None,
+) -> list[EvaluationCase]:
+    """The cases a run should evaluate — shared by the deterministic and agent runners.
+
+    ``difficulties`` restricts to a subset (e.g. ``{MULTI_HOP, ADVERSARIAL}`` for
+    Phase 9's "hard incidents" experiment); ``None`` means every case in the
+    split, matching every runner's behavior before Phase 9.
+    """
+    stmt = select(EvaluationCase).where(
+        EvaluationCase.dataset_version == dataset_version,
+        EvaluationCase.split == split,
+    )
+    if difficulties:
+        stmt = stmt.where(EvaluationCase.difficulty.in_(difficulties))
+    return list(session.execute(stmt).scalars().all())
+
+
 def run_evaluation(
     session: Session,
     *,
@@ -240,24 +262,18 @@ def run_evaluation(
     llm_provider: LLMProvider,
     rerank_provider: RerankProvider | None = None,
     settings: Settings,
+    difficulties: set[Difficulty] | None = None,
     notes: str = "",
 ) -> EvaluationRun:
-    """Evaluate every case in ``dataset_version``/``split`` and persist one run.
+    """Evaluate every matching case in ``dataset_version``/``split`` and persist one run.
 
     Each call creates a brand-new ``EvaluationRun`` (evaluation runs are an
     append-only history, not idempotent by natural key — re-running is how you
     compare a system change against the past, so each run must be its own row).
     Caller is responsible for committing.
     """
-    cases = (
-        session.execute(
-            select(EvaluationCase).where(
-                EvaluationCase.dataset_version == dataset_version,
-                EvaluationCase.split == split,
-            )
-        )
-        .scalars()
-        .all()
+    cases = select_cases(
+        session, dataset_version=dataset_version, split=split, difficulties=difficulties
     )
 
     run = EvaluationRun(

@@ -121,7 +121,7 @@ citation verification, and every tool are plain, unit-tested Python underneath i
 | `ingestion` | load synthetic docs, chunk (token-bounded, overlap), persist | 3 |
 | `retrieval` | `semantic`, `lexical`, `fusion` (RRF), `rerank`, `filters` | 3 / 5 / 6 / 7 |
 | `generation` | context construction, structured generation, citation verification | 3 |
-| `evaluation` | dataset loading, metrics, run persistence, comparison reports | 4 |
+| `evaluation` | dataset loading, metrics, run persistence, comparison reports; `agent_runner` evaluates the Phase 8 agent through the same tables | 4 / 9 |
 | `agent` | LangGraph orchestrator + read-only typed tools + budgets | 8 |
 
 ## Data model

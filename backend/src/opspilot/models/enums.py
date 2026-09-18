@@ -52,9 +52,21 @@ class EvalSplit(enum.StrEnum):
 
 
 class RetrievalStrategy(enum.StrEnum):
+    """The pipeline an ``EvaluationRun`` measured.
+
+    ``AGENT`` is not a retrieval arm at all — it labels a Phase 8 agent run
+    (see ``opspilot.evaluation.agent_runner``) so it sits in the same
+    ``evaluation_runs`` table and comparison report as the deterministic
+    strategies, per the Phase 9 "does the agent help?" experiment. Never pass
+    it to :func:`opspilot.retrieval.strategy.retrieve_candidates` — the
+    agent's own tools pick a real strategy (currently always ``HYBRID_RRF``)
+    internally.
+    """
+
     VECTOR = "vector"
     LEXICAL = "lexical"
     HYBRID_RRF = "hybrid_rrf"
+    AGENT = "agent"
 
     @classmethod
     def from_name(cls, name: str) -> RetrievalStrategy:

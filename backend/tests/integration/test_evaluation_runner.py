@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import pytest
 from corpus_fixtures import tiny_corpus
-from eval_fixtures import tiny_ground_truth
+from eval_fixtures import mixed_difficulty_ground_truth, tiny_ground_truth
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opspilot.config import get_settings
 from opspilot.evaluation.loader import upsert_ground_truth
 from opspilot.evaluation.report import build_report
-from opspilot.evaluation.runner import run_evaluation
+from opspilot.evaluation.runner import run_evaluation, select_cases
 from opspilot.ingestion.pipeline import ingest_corpus
-from opspilot.models.enums import EvalSplit, RetrievalStrategy
+from opspilot.models.enums import Difficulty, EvalSplit, RetrievalStrategy
 from opspilot.models.evaluation import EvaluationResult
 from opspilot.providers.fake import FakeEmbeddingProvider, FakeLLMProvider, FakeRerankProvider
 
@@ -180,3 +180,63 @@ def test_reranker_is_recorded_and_timed(db_session: Session, clean_db: None) -> 
         assert result.latency_ms["rerank_ms"] >= 0.0
 
     assert "fake-rerank-v1" in build_report(db_session)
+
+
+def test_select_cases_filters_by_difficulty(db_session: Session, clean_db: None) -> None:
+    upsert_ground_truth(
+        db_session,
+        mixed_difficulty_ground_truth(),
+        dataset_version=_DATASET_VERSION,
+        split=EvalSplit.DEV,
+    )
+    db_session.commit()
+
+    hard = select_cases(
+        db_session,
+        dataset_version=_DATASET_VERSION,
+        split=EvalSplit.DEV,
+        difficulties={Difficulty.MULTI_HOP, Difficulty.ADVERSARIAL},
+    )
+    assert {c.case_id for c in hard} == {"hard-01", "hard-02"}
+
+    everything = select_cases(
+        db_session, dataset_version=_DATASET_VERSION, split=EvalSplit.DEV, difficulties=None
+    )
+    assert {c.case_id for c in everything} == {"easy-01", "hard-01", "hard-02"}
+
+
+def test_run_evaluation_respects_the_difficulty_filter(db_session: Session, clean_db: None) -> None:
+    ingest_corpus(
+        db_session,
+        tiny_corpus(),
+        embedding_provider=FakeEmbeddingProvider(dim=384),
+        chunk_size=64,
+        chunk_overlap=8,
+    )
+    upsert_ground_truth(
+        db_session,
+        mixed_difficulty_ground_truth(),
+        dataset_version=_DATASET_VERSION,
+        split=EvalSplit.DEV,
+    )
+    db_session.commit()
+
+    run = run_evaluation(
+        db_session,
+        dataset_version=_DATASET_VERSION,
+        split=EvalSplit.DEV,
+        strategy=RetrievalStrategy.VECTOR,
+        embedding_provider=FakeEmbeddingProvider(dim=384),
+        llm_provider=FakeLLMProvider(),
+        settings=get_settings(),
+        difficulties={Difficulty.MULTI_HOP, Difficulty.ADVERSARIAL},
+    )
+    db_session.commit()
+
+    assert run.aggregate_metrics["n_cases"] == 2
+    results = (
+        db_session.execute(select(EvaluationResult).where(EvaluationResult.run_id == run.id))
+        .scalars()
+        .all()
+    )
+    assert {r.case_id for r in results} == {"hard-01", "hard-02"}

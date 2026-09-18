@@ -141,6 +141,56 @@ dataset version/split, git SHA when available) with `aggregate_metrics` (means, 
 P/R/F1, latency p50/p95, total + mean cost) filled in after every case runs. Runs are an append-only history, not idempotent —
 re-running is how a system change gets compared against the past.
 
+## Hard-incident / agent comparison (Phase 9)
+
+```bash
+cd backend
+uv run python -m opspilot.evaluation run --strategy vector --difficulty multi_hop,adversarial
+uv run python -m opspilot.evaluation run --strategy hybrid --reranker none --difficulty multi_hop,adversarial
+uv run python -m opspilot.evaluation run --strategy agent --difficulty multi_hop,adversarial
+# or: make eval-experiment-agent runs all three + the report
+```
+
+**`--difficulty`** (comma-separated `straightforward`/`multi_hop`/`unanswerable`/`adversarial`)
+restricts a run to a subset of the loaded cases, shared by `select_cases` between the
+deterministic and agent runners. Omit it to evaluate every case in the split, unchanged from
+before Phase 9.
+
+**`--strategy agent`** dispatches to `opspilot.evaluation.agent_runner.run_agent_evaluation`
+instead of the deterministic `run_evaluation` — the Phase 8 agent chooses its own tool calls
+per case rather than following one fixed retrieve-then-generate pass. It still persists an
+`EvaluationRun`/`EvaluationResult` row per case (`retrieval_strategy=AGENT`) so it sits in the
+same comparison report, but three retrieval metrics are explicitly **not applicable** and are
+stored as `None` (`report.py` renders a missing/`None` value as `n/a`, not `0`):
+
+- `recall_at_k` / `mrr` / `ndcg_at_10` assume a single ranked chunk list; the agent's evidence
+  is a heterogeneous, variable-length sequence of tool observations (search results, a
+  deployment record, raw log lines, a dependency graph), which isn't a category recall/MRR/nDCG
+  can score. Forcing a proxy here would be exactly the kind of made-up number this project
+  refuses to produce.
+- In their place: `evidence_coverage` (do any of the agent's observations, of any tool, contain
+  a required snippet? — the same function as the deterministic runner, just fed the
+  observations' rendered text instead of chunk content) and `citation_relevance` (does the same
+  check hold restricted to only the observations the agent actually cited? — `None` when it
+  cited nothing, never `0`, for the same reason `citation_precision` is `None` there).
+- `hallucinated_forbidden_claim`, the abstention confusion matrix, latency, and cost are
+  computed identically to the deterministic runner (plus `mean_tool_calls_used`, which has no
+  deterministic-pipeline analog).
+
+**"Hard incidents"**: `--difficulty multi_hop,adversarial` — of the current 22 ground-truth
+cases, 11 are `multi_hop` and 2 are `adversarial` (13 total); the plan's "does the agent help?"
+question is specifically about incidents that need cross-referencing multiple documents or
+resisting an injected instruction, not the `straightforward` cases every pipeline already
+handles.
+
+**Status: the harness is built and verified under the offline `fake` LLM (wiring-only,
+degenerate numbers — see below), but `make eval-experiment-agent` has not yet been run with a
+real LLM.** Accuracy/groundedness/hallucination are undefined without one; see
+`docs/experiments.md` Experiment 4 for exactly what to run and why it costs money. A complexity
+router (falling back to the deterministic pipeline when the agent doesn't earn its extra
+cost/latency) is deliberately **not** built yet — that decision needs Experiment 4's real
+numbers first, not a guess.
+
 ## ⚠️ Fake vs. real LLM provider — read this before trusting any generation number
 
 The default `.env` uses `OPSPILOT_LLM_PROVIDER=fake`. The fake provider **never emits valid
@@ -169,7 +219,10 @@ uv run python -m opspilot.evaluation run --dataset-version gen2.0.0-seed42 --spl
 
 This calls the real Anthropic API once per case (22 cases in the current dataset) — costs
 scale with `dataset_version`/split size and `OPSPILOT_LLM_MODEL`. Nothing in this repository
-runs that command automatically; it is always an explicit, opt-in action.
+runs that command automatically; it is always an explicit, opt-in action. Phase 9's
+`make eval-experiment-agent` makes three such calls per hard case (one-shot, deterministic,
+agent — the agent itself may call the LLM more than once per case, bounded by
+`OPSPILOT_AGENT_MAX_TOOL_CALLS`), so budget accordingly.
 
 ## Reports (`opspilot.evaluation.report`)
 
