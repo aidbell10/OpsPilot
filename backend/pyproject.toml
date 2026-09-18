@@ -27,6 +27,9 @@ ml = [
     "torch>=2.2",
     "sentence-transformers>=3.3",
     "numpy>=1.26",
+    "datasets>=3.0",
+    "matplotlib>=3.9",
+    "accelerate>=1.1",
 ]
 
 [dependency-groups]
@@ -71,7 +74,7 @@ warn_unreachable = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "sentence_transformers.*", "torch.*", "testcontainers.*"]
+module = ["pgvector.*", "sentence_transformers.*", "torch.*", "testcontainers.*", "datasets.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

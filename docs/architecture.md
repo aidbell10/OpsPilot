@@ -44,8 +44,11 @@ component steps, for per-stage timing) the evaluation runner, so they cannot dri
   `RerankProvider` (`fake`, or a local sentence-transformers `CrossEncoder` —
   `cross-encoder/ms-marco-MiniLM-L-6-v2` by default) and keeps the best `retrieval_top_k`.
   The cross-encoder sees (query, chunk) jointly, so it is more accurate than the bi-encoder
-  but only affordable over a ~20-candidate set. Fine-tuning this model on the planted ground
-  truth is Phase 7.
+  but only affordable over a ~20-candidate set. **Phase 7** fine-tunes this model on the
+  planted ground truth (`ml/train_reranker.py`) — the fine-tuned checkpoint is just another
+  `reranker_model` value (a local path instead of a HF hub id); no runtime code changed to
+  support it, since `LocalCrossEncoderProvider(model=...)` already accepted an arbitrary
+  string. See [`docs/ml-training.md`](ml-training.md).
 
 Generation is unchanged:
 `opspilot.generation.prompt` (evidence-grounded prompt, JSON-schema instructions),

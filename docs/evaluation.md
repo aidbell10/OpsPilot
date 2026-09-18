@@ -47,7 +47,10 @@ and with only 22 cases across 12 chains (several near-duplicate queries share a 
 `gt-01-payments-auth-timeout-{01,02,adv}`), any dev/test split today would either be
 statistically meaningless or leak chain siblings across the boundary — the opposite of a
 held-out guarantee. A real split (grouped by `chain_id`, never splitting a chain across dev
-and test) is Phase-4-follow-up work once the corpus grows toward its target size.
+and test) is Phase-4-follow-up work once the corpus grows toward its target size — this
+`evaluation_cases`/`evaluation_runs` split. Phase 7 needed exactly that guarantee for its
+fine-tuned reranker and couldn't wait for corpus growth, so it built its own chain-grouped
+split (`ml/datasets/split.json`) outside this table; see `docs/ml-training.md`.
 
 **`dataset_version`**: `f"gen{generator_version}-seed{seed}"` read from `manifest.json`
 (currently `gen2.0.0-seed42`) — stable across identical rebuilds of the same corpus, and

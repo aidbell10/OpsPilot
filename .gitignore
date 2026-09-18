@@ -31,6 +31,8 @@ frontend/.env*
 # Data & models (regenerable, large)
 data/generated/
 ml/checkpoints/
+ml/datasets/
+ml/reports/
 ml/runs/
 .cache/
 .hf_cache/

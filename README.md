@@ -215,6 +215,24 @@ git-ignored and rebuilt on demand. See [`data/generator/README.md`](data/generat
 
 Quality gate: `uv run ruff check .` · `uv run ruff format --check .` · `uv run mypy src`.
 
+### Fine-tuned reranker (Phase 7)
+
+```bash
+cd backend
+uv sync --group dev --extra ml
+uv run python ../ml/build_dataset.py       # -> ml/datasets/{train,dev,test}.jsonl (git-ignored)
+uv run python ../ml/train_reranker.py      # -> ml/checkpoints/opspilot-ce-v1 (~2-3 min on CPU)
+uv run python ../ml/eval_experiment3.py    # A vs B vs C on the held-out test chains
+# or: make ml-dataset / make ml-train / make ml-experiment3 / make ml-test / make ml-lint
+```
+
+Continues training from the Phase 6 pretrained `cross-encoder/ms-marco-MiniLM-L-6-v2` on ~108
+labeled pairs built from 9 of the 12 planted incident chains; the other 2 chains are held out
+entirely and used only for evaluation. See [`docs/ml-training.md`](docs/ml-training.md) for the
+dataset methodology and honest tradeoffs, and [Experiment 3](docs/experiments.md) for the
+measured (not hand-written) numbers — including the honest result that fine-tuning at this
+corpus scale doesn't clearly beat the pretrained baseline.
+
 Point integration tests at an already-running database with
 `OPSPILOT_TEST_DATABASE_URL=postgresql+psycopg://opspilot:opspilot@localhost:5432/opspilot`;
 otherwise they spin up an ephemeral `pgvector` container via testcontainers, and skip if
@@ -232,7 +250,7 @@ Docker is unavailable.
 | 4  | Versioned evaluation harness (retrieval / generation / reliability / performance / cost metrics) | ✅ done |
 | 5  | Hybrid retrieval (vector + FTS + RRF), metadata filters, strategy-per-eval-run; measured vector-vs-lexical-vs-hybrid experiment | ✅ done ([Experiment 1](docs/experiments.md)) |
 | 6  | Pretrained cross-encoder reranking (`RerankProvider`, `--reranker`), measured | ✅ done ([Experiment 2](docs/experiments.md)) |
-| 7  | Fine-tuned PyTorch cross-encoder reranker (hard negatives, loss curves, A/B/C comparison) | ⏳ |
+| 7  | Fine-tuned PyTorch cross-encoder reranker (hard negatives, loss curves, A/B/C comparison) | ✅ done ([Experiment 3](docs/experiments.md)) |
 | 8  | LangGraph agent with read-only tools and hard budgets | ⏳ |
 | 9  | "Does the agent help?" experiment + complexity router | ⏳ |
 | 10 | Next.js frontend incl. a first-class evaluation dashboard | ⏳ |

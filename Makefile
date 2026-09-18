@@ -27,6 +27,10 @@ help:
 	@echo "eval-experiment   run vector + lexical + hybrid back to back, then report"
 	@echo "eval-experiment-rerank   hybrid with vs without the cross-encoder, then report"
 	@echo "eval-report  print the cross-run comparison table"
+	@echo "ml-dataset   build the labeled reranker fine-tuning dataset -> ml/datasets"
+	@echo "ml-train     fine-tune the cross-encoder reranker -> ml/checkpoints"
+	@echo "ml-experiment3   A/B/C reranker comparison on the held-out test chains (needs db-up + ingest)"
+	@echo "ml-test / ml-lint   test / lint the ml/ reranker training pipeline"
 
 .PHONY: db-up db-down up down
 db-up:      ; docker compose up -d db
@@ -80,3 +84,14 @@ eval-experiment-rerank:
 	cd $(BACKEND) && uv run python -m opspilot.evaluation run --strategy hybrid --reranker none          --notes "exp2 hybrid" \
 	 && uv run python -m opspilot.evaluation run --strategy hybrid --reranker cross_encoder --notes "exp2 hybrid+rerank" \
 	 && uv run python -m opspilot.evaluation report
+
+# --- Phase 7: fine-tuned PyTorch cross-encoder reranker -------------------
+ML := uv run --project $(BACKEND) python
+.PHONY: ml-dataset ml-train ml-experiment3 ml-lint ml-test
+ml-dataset:     ; $(ML) ml/build_dataset.py
+ml-train:       ; $(ML) ml/train_reranker.py
+ml-experiment3: ; $(ML) ml/eval_experiment3.py
+ml-test:        ; cd $(BACKEND) && uv run pytest ../ml/tests -q
+ml-lint:
+	cd $(BACKEND) && uv run ruff check ../ml && uv run ruff format --check ../ml \
+	 && uv run mypy --config-file pyproject.toml ../ml
